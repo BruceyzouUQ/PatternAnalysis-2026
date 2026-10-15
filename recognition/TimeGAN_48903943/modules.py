@@ -71,11 +71,42 @@ class Decoder(nn.Module):
         x = self.deconv_layers(x)
         return x
 
-z = torch.randn(8, 128)
-out = Decoder()(z)
-print(out.shape)   # want (8, 40, 64)
+# z = torch.randn(8, 128)
+# out = Decoder()(z)
+# print(out.shape)   # want (8, 40, 64)
 
 # Test encoder + decoder
-x = torch.randn(8, 64, 40).permute(0, 2, 1)
-mu, logvar = Encoder()(x)
-print(Decoder()(mu).shape == x.shape)
+# x = torch.randn(8, 64, 40).permute(0, 2, 1)
+# mu, logvar = Encoder()(x)
+# print(Decoder()(mu).shape == x.shape)
+
+
+class TimeVAE(nn.Module):
+    def __init__(self, latent_dim=128):
+        super().__init__()
+        self.encoder = Encoder(latent_dim)
+        self.decoder = Decoder(latent_dim)
+        self.latent_dim = latent_dim
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + std * eps
+
+    def forward(self, x):                      # x: (B, 64, 40)
+        mu, logvar = self.encoder(x.permute(0, 2, 1))
+        z = self.reparameterize(mu, logvar)
+        x_hat = self.decoder(z).permute(0, 2, 1)   # back to (B, 64, 40)
+        return x_hat, mu, logvar
+
+    @torch.no_grad()
+    def sample(self, n):
+        z = torch.randn(n, self.latent_dim, device=next(self.parameters()).device)
+        return self.decoder(z).permute(0, 2, 1)
+
+
+def vae_loss(x_hat, x, mu, logvar, beta=1.0):
+    b = x.size(0)
+    recon_loss = F.mse_loss(x_hat, x, reduction='sum') / b
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / b
+    return recon_loss + beta * kl_loss, recon_loss, kl_loss
