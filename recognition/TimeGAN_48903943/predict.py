@@ -53,5 +53,22 @@ def visualise_reconstructions(model, val_loader, n=8):
     plt.savefig(os.path.join(output_dir, "reconstructions.png"))
     plt.close()
 
+def visualise_samples(model, val_set, n=8):
+    samples = model.sample(n).cpu().numpy()          # (n, 64, 39)
+    mid = val_set[0][1].numpy()                      # any real (64,) midpoint; volumes ignore it
+
+    imgs = [to_depth_heatmap(samples[i], mid) for i in range(n)]
+    vmax = max(img.max() for img in imgs)            # one shared colour scale
+
+    fig, axes = plt.subplots(1, n, figsize=(2 * n, 3))
+    for i, img in enumerate(imgs):
+        axes[i].imshow(img, aspect="auto", vmin=0, vmax=vmax)
+        axes[i].axis("off")
+    axes[0].set_title("Random Samples", loc="left")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "randsamples.png"))
+    plt.close()
+
 if __name__ == "__main__":
     visualise_reconstructions(model, val_loader)
+    visualise_samples(model, val_set)
