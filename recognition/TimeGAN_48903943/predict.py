@@ -7,7 +7,8 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-_, val_set, _, norm = get_datasets("order_sample.csv")
+DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
+train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
 val_loader = DataLoader(val_set, batch_size=16, shuffle=True)
 output_dir = os.path.expanduser("~/baselineOutputs")
 os.makedirs(output_dir, exist_ok=True)
