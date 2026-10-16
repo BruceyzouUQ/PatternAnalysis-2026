@@ -30,7 +30,7 @@ def run_epoch(model, loader, device, beta, optimizer=None):
 
 
 def main():
-    num_epochs, beta, lr = 5, 1.0, 1e-3
+    num_epochs, beta, lr = 100, 1.0, 1e-3
 
     # local
     # train_set, val_set, test_set, norm = get_datasets("order_sample.csv")
