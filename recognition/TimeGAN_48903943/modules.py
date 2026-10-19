@@ -7,9 +7,9 @@ class Encoder(nn.Module):
         super().__init__()
         # 5 conv blocks, each stride=2, doubling channels roughly:
         # each block: Conv1d + BatchNorm1d + activation
-        # input: (B, 39, 64) -> output: (B, 512, 2)
+        # input: (B, 40, 64) -> output: (B, 512, 2)
         self.conv_layers = nn.Sequential(
-            nn.Conv1d(in_channels=39, out_channels=64, kernel_size=3, stride=2, padding=1),
+            nn.Conv1d(in_channels=40, out_channels=64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
@@ -37,7 +37,7 @@ class Encoder(nn.Module):
         logvar = self.fc_logvar(x)
         return mu, logvar
 
-# x = torch.randn(8, 64, 39)
+# x = torch.randn(8, 64, 40)
 # mu, logvar = Encoder()(x.permute(0, 2, 1))
 # print(mu.shape, logvar.shape)   # expect torch.Size([8, 128]) each
 
@@ -48,7 +48,7 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, flattened_dim)
 
         # mirror of encoder: 5 ConvTranspose1d blocks
-        # (B, 512, 2) -> (B, 39, 64)
+        # (B, 512, 2) -> (B, 40, 64)
         self.deconv_layers = nn.Sequential(
             nn.ConvTranspose1d(in_channels=512, out_channels=512, kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.BatchNorm1d(512),
@@ -62,7 +62,7 @@ class Decoder(nn.Module):
             nn.ConvTranspose1d(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=64, out_channels=39, kernel_size=3, stride=2, padding=1, output_padding=1)
+            nn.ConvTranspose1d(in_channels=64, out_channels=40, kernel_size=3, stride=2, padding=1, output_padding=1)
         )
 
     def forward(self, z):
@@ -73,10 +73,10 @@ class Decoder(nn.Module):
 
 # z = torch.randn(8, 128)
 # out = Decoder()(z)
-# print(out.shape)   # want (8, 39, 64)
+# print(out.shape)   # want (8, 40, 64)
 
 # Test encoder + decoder
-# x = torch.randn(8, 64, 39).permute(0, 2, 1)
+# x = torch.randn(8, 64, 40).permute(0, 2, 1)
 # mu, logvar = Encoder()(x)
 # print(Decoder()(mu).shape == x.shape)
 
@@ -93,10 +93,10 @@ class TimeVAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + std * eps
 
-    def forward(self, x):                      # x: (B, 64, 39)
+    def forward(self, x):                      # x: (B, 64, 40)
         mu, logvar = self.encoder(x.permute(0, 2, 1))
         z = self.reparameterize(mu, logvar)
-        x_hat = self.decoder(z).permute(0, 2, 1)   # back to (B, 64, 39)
+        x_hat = self.decoder(z).permute(0, 2, 1)   # back to (B, 64, 40)
         return x_hat, mu, logvar
 
     @torch.no_grad()
