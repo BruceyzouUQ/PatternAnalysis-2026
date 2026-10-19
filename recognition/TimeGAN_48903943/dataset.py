@@ -16,16 +16,14 @@ def chronological_split(X, train=0.7, val=0.15):
     return X[:i], X[i:j], X[j:]
 
 def make_features(X):
-    X = np.asarray(X, dtype=np.float64)  # keep float64 until after subtracting the mid
+    X = np.asarray(X, dtype=np.float64)
     ask_p, ask_v = X[:, 0::4], X[:, 1::4]
     bid_p, bid_v = X[:, 2::4], X[:, 3::4]
 
-    # Gaps between consecutive levels, in cents (>= 1 tick for a valid book)
     ask_gap = np.diff(ask_p, axis=1) / CENT
     bid_gap = -np.diff(bid_p, axis=1) / CENT
     spread = (ask_p[:, 0] - bid_p[:, 0]) / CENT
 
-    # Floor at 1 tick so log is defined; real valid books are unaffected
     ask_gap = np.maximum(ask_gap, 1.0)
     bid_gap = np.maximum(bid_gap, 1.0)
     spread = np.maximum(spread, 1.0)
@@ -33,25 +31,31 @@ def make_features(X):
     prices = np.log(np.concatenate([ask_gap, bid_gap], axis=1))
     volumes = np.log1p(np.concatenate([ask_v, bid_v], axis=1))
     mid = (ask_p[:, 0] + bid_p[:, 0]) / 2
-    return prices, volumes, mid, np.log(spread)
+
+    # Per-event midpoint log-return; prepend makes it length N (first value 0)
+    ret = np.diff(np.log(mid), prepend=np.log(mid[0]))
+    return prices, volumes, mid, np.log(spread), ret
+
 
 
 class LOBNormaliser:
     def fit(self, X_train):
-        P, V, _, S = make_features(X_train)
+        P, V, _, S, R = make_features(X_train)
         self.p_scaler = StandardScaler().fit(P)
         self.v_scaler = StandardScaler().fit(V)
         self.s_scaler = StandardScaler().fit(S[:, None])
+        self.r_scaler = StandardScaler().fit(R[:, None])
         return self
 
     def transform(self, X):
-        P, V, mid, spread = make_features(X)
+        P, V, mid, spread, ret = make_features(X)
         Z = np.concatenate([
             self.p_scaler.transform(P),
             self.v_scaler.transform(V),
-            self.s_scaler.transform(spread[:, None])
+            self.s_scaler.transform(spread[:, None]),
+            self.r_scaler.transform(ret[:, None]),      # column 39
         ], axis=1).astype(np.float32)
-        return Z, mid                           # mid is needed for the inverse
+        return Z, mid     # mid is needed for the inverse
 
     def inverse(self, Z, mid):
         Z = np.asarray(Z, dtype=np.float64)
@@ -81,6 +85,15 @@ class LOBNormaliser:
         X[:, 2::4], X[:, 3::4] = bid_prices, V[:, 10:]
 
         return X
+
+    def mid_path(self, Z, mid0):
+        """Rebuild midpoint paths from generated returns.
+        Z: (n, 64, 40) normalised windows, mid0: (n,) starting midpoint per window.
+        Returns (n, 64) midpoints whose first event equals mid0."""
+        Z = np.asarray(Z, dtype=np.float64)
+        r = self.r_scaler.inverse_transform(Z[:, :, 39].reshape(-1, 1)).reshape(Z.shape[0], -1)
+        cum = np.cumsum(r, axis=1) - r[:, :1]  # first event -> 0
+        return np.asarray(mid0)[:, None] * np.exp(cum)
 
     def save(self, path):
         joblib.dump(self, path)
