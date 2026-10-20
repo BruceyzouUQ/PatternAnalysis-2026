@@ -116,7 +116,25 @@ def vae_loss(x_hat, x, mu, logvar, beta=1.0):
 # ---------------------------------TIMEGAN--------------------------------
 
 class Embedder(nn.Module):
-    pass
+    def __init__(self, feature_dim=40, latent_dim=128, num_layers=2):
+        super().__init__()
+
+        self.gru = nn.GRU(
+            feature_dim,
+            latent_dim,
+            num_layers,
+            batch_first=True
+        )
+
+        self.projection = nn.Linear(latent_dim, latent_dim)
+
+    def forward(self, x):
+        h, _ = self.gru(x)
+        return self.projection(h)
+
+# a = torch.randn(8, 64, 40)
+# out = Embedder()(a)
+# print(out.shape)
 
 class Recovery(nn.Module):
     pass
