@@ -29,7 +29,7 @@ def run_epoch(model, loader, device, beta, optimizer=None):
     return (sums / n).tolist()
 
 
-def main():
+def vae():
     num_epochs, beta, lr = 100, 1.0, 1e-3
 
     # local
@@ -76,6 +76,18 @@ def main():
         ax.set_title(name); ax.set_xlabel("epoch"); ax.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(checkpoint_dir, "loss_curves.png"))
+
+
+def main():
+    model_type = "timegan"  # Change to "vae" for baseline
+
+    if model_type == "vae":
+        vae()
+    elif model_type == "timegan":
+        # timegan()
+        pass
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
 
 
 if __name__ == "__main__":
