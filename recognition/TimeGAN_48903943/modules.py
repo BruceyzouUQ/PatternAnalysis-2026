@@ -132,9 +132,6 @@ class Embedder(nn.Module):
         h, _ = self.gru(x)
         return self.projection(h)
 
-a = torch.randn(8, 64, 40)
-out = Embedder()(a)
-# print(out.shape)
 
 class Recovery(nn.Module):
     def __init__(self, feature_dim=40, latent_dim=128, num_layers=2):
@@ -153,17 +150,118 @@ class Recovery(nn.Module):
         h, _ = self.gru(x)
         return self.projection(h)
 
-r = Recovery()(out)
-print(r.shape)
+# embedder = Embedder()
+# recovery = Recovery()
+#
+# optimizer = torch.optim.Adam(
+#     list(embedder.parameters()) + list(recovery.parameters()),
+#     lr=1e-3
+# )
+#
+# x = torch.randn(8, 64, 40)
+#
+# optimizer.zero_grad()
+#
+# h = embedder(x)
+# x_hat = recovery(h)
+#
+# loss = nn.functional.mse_loss(x_hat, x)
+#
+# loss.backward()
+# optimizer.step()
+#
+# print(loss.item())
 
-class Generator(nn.Module):
-    pass
 
 class Supervisor(nn.Module):
-    pass
+    def __init__(self, latent_dim=128, num_layers=2):
+        super().__init__()
+
+        self.gru = nn.GRU(
+            latent_dim,
+            latent_dim,
+            num_layers,
+            batch_first=True
+        )
+
+        self.projection = nn.Linear(latent_dim, latent_dim)
+
+    def forward(self, x):
+        out, _ = self.gru(x)
+        return self.projection(out)
+
+# x = torch.randn(8, 64, 40)
+#
+# embedder = Embedder()
+# supervisor = Supervisor()
+#
+# h = embedder(x)
+# h_hat = supervisor(h)
+#
+# print(h.shape)      # (8, 64, 128)
+# print(h_hat.shape)  # (8, 64, 128)
+
+class Generator(nn.Module):
+    def __init__(self, noise_dim=40, latent_dim=128, num_layers=2):
+        super().__init__()
+
+        self.gru = nn.GRU(
+            noise_dim,
+            latent_dim,
+            num_layers,
+            batch_first=True
+        )
+
+        self.projection = nn.Linear(latent_dim, latent_dim)
+
+    def forward(self, z):
+        h, _ = self.gru(z)
+        return self.projection(h)
+
+# z = torch.randn(8, 64, 40)
+#
+# generator = Generator()
+# supervisor = Supervisor()
+# recovery = Recovery()
+#
+# h = generator(z)
+# h_hat = supervisor(h)
+# x_hat = recovery(h_hat)
+#
+# print(h.shape)
+# print(h_hat.shape)
+# print(x_hat.shape)
 
 class Discriminator(nn.Module):
-    pass
+    def __init__(self, latent_dim=128, num_layers=2):
+        super().__init__()
+
+        self.gru = nn.GRU(
+            latent_dim,
+            latent_dim,
+            num_layers,
+            batch_first=True
+        )
+
+        self.projection = nn.Linear(latent_dim, 1)
+
+    def forward(self, h):
+        out, _ = self.gru(h)
+        return self.projection(out)
+
+z = torch.randn(8, 64, 40)
+
+generator = Generator()
+supervisor = Supervisor()
+discriminator = Discriminator()
+
+h = generator(z)
+h_hat = supervisor(h)
+scores = discriminator(h_hat)
+
+print(h.shape)       # (8, 64, 128)
+print(h_hat.shape)   # (8, 64, 128)
+print(scores.shape)  # (8, 64, 1)
 
 class TimeGAN(nn.Module):
     pass
