@@ -10,14 +10,14 @@ from torch.utils.data import DataLoader
 DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
 train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
 val_loader = DataLoader(val_set, batch_size=16, shuffle=True)
-output_dir = os.path.expanduser("~/baselineOutputs40")
+output_dir = os.path.expanduser("~/baselineOutputs")
 os.makedirs(output_dir, exist_ok=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --- Load trained model ---
+# --- Load trained model TimeVAE ---
 model = TimeVAE(latent_dim=128).to(device)
 model.load_state_dict(torch.load(
-    os.path.join(output_dir, "timevae40_best.pt"),
+    os.path.join(output_dir, "timevae_best.pt"),
     map_location=device))
 model.eval()
 

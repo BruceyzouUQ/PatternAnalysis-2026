@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+#---------------------------------TIMEVAE----------------------------------
 class Encoder(nn.Module):
     def __init__(self, latent_dim=128):
         super().__init__()
@@ -110,3 +111,25 @@ def vae_loss(x_hat, x, mu, logvar, beta=1.0):
     recon_loss = F.mse_loss(x_hat, x, reduction='sum') / b
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / b
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
+
+
+# ---------------------------------TIMEGAN--------------------------------
+
+class Embedder(nn.Module):
+    pass
+
+class Recovery(nn.Module):
+    pass
+
+class Generator(nn.Module):
+    pass
+
+class Supervisor(nn.Module):
+    pass
+
+class Discriminator(nn.Module):
+    pass
+
+class TimeGAN(nn.Module):
+    pass
+
