@@ -132,12 +132,29 @@ class Embedder(nn.Module):
         h, _ = self.gru(x)
         return self.projection(h)
 
-# a = torch.randn(8, 64, 40)
-# out = Embedder()(a)
+a = torch.randn(8, 64, 40)
+out = Embedder()(a)
 # print(out.shape)
 
 class Recovery(nn.Module):
-    pass
+    def __init__(self, feature_dim=40, latent_dim=128, num_layers=2):
+        super().__init__()
+
+        self.gru = nn.GRU(
+            latent_dim,
+            latent_dim,
+            num_layers,
+            batch_first=True
+        )
+
+        self.projection = nn.Linear(latent_dim, feature_dim)
+
+    def forward(self, x):
+        h, _ = self.gru(x)
+        return self.projection(h)
+
+r = Recovery()(out)
+print(r.shape)
 
 class Generator(nn.Module):
     pass
