@@ -249,20 +249,37 @@ class Discriminator(nn.Module):
         out, _ = self.gru(h)
         return self.projection(out)
 
-z = torch.randn(8, 64, 40)
-
-generator = Generator()
-supervisor = Supervisor()
-discriminator = Discriminator()
-
-h = generator(z)
-h_hat = supervisor(h)
-scores = discriminator(h_hat)
-
-print(h.shape)       # (8, 64, 128)
-print(h_hat.shape)   # (8, 64, 128)
-print(scores.shape)  # (8, 64, 1)
+# z = torch.randn(8, 64, 40)
+#
+# generator = Generator()
+# supervisor = Supervisor()
+# discriminator = Discriminator()
+#
+# h = generator(z)
+# h_hat = supervisor(h)
+# scores = discriminator(h_hat)
+#
+# print(h.shape)       # (8, 64, 128)
+# print(h_hat.shape)   # (8, 64, 128)
+# print(scores.shape)  # (8, 64, 1)
 
 class TimeGAN(nn.Module):
-    pass
+    def __init__(self, feature_dim=40, latent_dim=128, noise_dim=40, num_layers=2):
+        super().__init__()
 
+        self.embedder = Embedder(feature_dim, latent_dim, num_layers)
+        self.recovery = Recovery(feature_dim, latent_dim, num_layers)
+        self.supervisor = Supervisor(latent_dim, num_layers)
+        self.generator = Generator(noise_dim, latent_dim, num_layers)
+        self.discriminator = Discriminator(latent_dim, num_layers)
+
+        self.noise_dim = noise_dim
+        self.latent_dim = latent_dim
+
+    # reconstruction
+    def forward(self, x):
+        return self.recovery(self.embedder(x))
+
+    # synthetic data generation
+    def generate(self, z):
+        return self.recovery(self.supervisor(self.generator(z)))
