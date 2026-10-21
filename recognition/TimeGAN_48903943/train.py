@@ -131,6 +131,70 @@ def pretrain_supervisor(model, loader, device, optimizer=None):
 
     return total_loss / len(loader)
 
+def generator_loss(model, x, z, gamma=1.0):
+    with torch.no_grad():
+        h = model.embedder(x)
+
+    h_fake_raw = model.generator(z)
+    h_fake = model.supervisor(h_fake_raw)
+    x_fake = model.recovery(h_fake)
+
+    fake_logits = model.discriminator(h_fake)
+    fake_raw_logits = model.discriminator(h_fake_raw)
+
+    criterion = torch.nn.BCEWithLogitsLoss()
+
+    loss_adv = criterion(fake_logits, torch.ones_like(fake_logits))
+    loss_adv_raw = criterion(fake_raw_logits, torch.ones_like(fake_raw_logits))
+
+    loss_s = torch.nn.functional.mse_loss(
+        model.supervisor(h)[:, :-1, :],
+        h[:, 1:, :]
+    )
+
+    real_mean = x.mean(dim=(0, 1))
+    fake_mean = x_fake.mean(dim=(0, 1))
+
+    real_std = x.std(dim=(0, 1), unbiased=False)
+    fake_std = x_fake.std(dim=(0, 1), unbiased=False)
+
+    loss_m = (
+            torch.mean(torch.abs(real_mean - fake_mean))
+            + torch.mean(torch.abs(real_std - fake_std))
+    )
+
+    loss_g = (
+            loss_adv
+            + gamma * loss_adv_raw
+            + 100 * torch.sqrt(loss_s + 1e-8)
+            + 100 * loss_m
+    )
+
+    return loss_g
+
+def discriminator_loss(model, x, z, gamma=1.0):
+    with torch.no_grad():
+        h = model.embedder(x)
+        h_fake_raw = model.generator(z)
+        h_fake = model.supervisor(h_fake_raw)
+
+    real_logits = model.discriminator(h)
+    fake_logits = model.discriminator(h_fake)
+    fake_raw_logits = model.discriminator(h_fake_raw)
+
+    criterion = torch.nn.BCEWithLogitsLoss()
+
+    loss_real = criterion(real_logits, torch.ones_like(real_logits))
+    loss_fake = criterion(fake_logits, torch.zeros_like(fake_logits))
+    loss_fake_raw = criterion(fake_raw_logits, torch.zeros_like(fake_raw_logits))
+
+    loss_d = loss_real + loss_fake + gamma * loss_fake_raw
+
+    return loss_d
+
+def joint_train_epoch():
+    pass
+
 def timegan():
     num_epochs, lr = 5, 1e-3
 
@@ -166,6 +230,28 @@ def timegan():
         val_loss = pretrain_supervisor(model, val_loader, device)
 
         print(f"Supervisor Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
+
+    # x, _ = next(iter(val_loader))
+    # x = x.to(device)
+    #
+    # model.eval()
+    #
+    # with torch.no_grad():
+    #     h = model.embedder(x)
+    #     h_hat = model.supervisor(h)
+    #
+    #     persistence_loss = torch.nn.functional.mse_loss(
+    #         h[:, :-1, :],
+    #         h[:, 1:, :]
+    #     )
+    #
+    #     supervisor_loss = torch.nn.functional.mse_loss(
+    #         h_hat[:, :-1, :],
+    #         h[:, 1:, :]
+    #     )
+    #
+    # print("Persistence:", persistence_loss.item())
+    # print("Supervisor:", supervisor_loss.item())
 
 
 def main():
