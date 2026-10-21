@@ -6,7 +6,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 
 from dataset import get_datasets
-from modules import TimeVAE, vae_loss
+from modules import TimeVAE, vae_loss, TimeGAN
 
 
 def run_epoch(model, loader, device, beta, optimizer=None):
@@ -78,14 +78,60 @@ def vae():
     plt.savefig(os.path.join(checkpoint_dir, "loss_curves.png"))
 
 
+#------------------------------TimeGAN--------------------------------------
+
+def pretrain_embedder(model, loader, device, optimizer=None):
+    training = optimizer is not None
+    model.train() if training else model.eval()
+
+    total_loss = 0
+
+    for x, _ in loader:
+        x = x.to(device)
+
+        with torch.set_grad_enabled(training):
+            x_hat = model(x)
+            loss = torch.nn.functional.mse_loss(x_hat, x)
+
+            if training:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+        total_loss += loss.item()
+
+    return total_loss / len(loader)
+
+def timegan():
+    DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
+    train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
+
+    train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=64)
+    test_loader = DataLoader(test_set, batch_size=64)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = TimeGAN().to(device)
+
+    optimizer = Adam(
+        list(model.embedder.parameters()) +
+        list(model.recovery.parameters()),
+        lr=1e-3,
+    )
+
+    for epoch in range(100):
+        train_loss = pretrain_embedder(model, train_loader, device, optimizer)
+        val_loss = pretrain_embedder(model, val_loader, device, optimizer)
+        print(f"Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
+
+
 def main():
     model_type = "timegan"  # Change to "vae" for baseline
 
     if model_type == "vae":
         vae()
     elif model_type == "timegan":
-        # timegan()
-        pass
+        timegan()
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
