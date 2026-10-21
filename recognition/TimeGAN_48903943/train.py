@@ -102,9 +102,41 @@ def pretrain_embedder(model, loader, device, optimizer=None):
 
     return total_loss / len(loader)
 
+def pretrain_supervisor(model, loader, device, optimizer=None):
+    training = optimizer is not None
+    model.train() if training else model.eval()
+
+    total_loss = 0
+
+    for x, _ in loader:
+        x = x.to(device)
+
+        with torch.no_grad():
+            h = model.embedder(x)
+
+        with torch.set_grad_enabled(training):
+            h_hat = model.supervisor(h)
+
+            loss = torch.nn.functional.mse_loss(
+                h_hat[:, :-1, :],
+                h[:, 1:, :]
+            )
+
+            if training:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+        total_loss += loss.item()
+
+    return total_loss / len(loader)
+
 def timegan():
-    DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
-    train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
+    num_epochs, lr = 5, 1e-3
+
+    train_set, val_set, test_set, norm = get_datasets("order_sample.csv")
+    # DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
+    # train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
 
     train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=64)
@@ -113,16 +145,27 @@ def timegan():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TimeGAN().to(device)
 
-    optimizer = Adam(
+    embedder_optimizer = Adam(
         list(model.embedder.parameters()) +
         list(model.recovery.parameters()),
-        lr=1e-3,
+        lr=lr,
     )
 
-    for epoch in range(100):
-        train_loss = pretrain_embedder(model, train_loader, device, optimizer)
-        val_loss = pretrain_embedder(model, val_loader, device, optimizer)
-        print(f"Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
+    for epoch in range(num_epochs):
+        train_loss = pretrain_embedder(model, train_loader, device, embedder_optimizer)
+        val_loss = pretrain_embedder(model, val_loader, device)
+        print(f"Embedder Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
+
+    supervisor_optimizer = Adam(
+        model.supervisor.parameters(),
+        lr=lr
+    )
+
+    for epoch in range(num_epochs):
+        train_loss = pretrain_supervisor(model, train_loader, device, supervisor_optimizer)
+        val_loss = pretrain_supervisor(model, val_loader, device)
+
+        print(f"Supervisor Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
 
 
 def main():
