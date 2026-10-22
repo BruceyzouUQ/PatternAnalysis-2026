@@ -204,65 +204,99 @@ def joint_train_epoch(model, loader, device,
 
     for x, _ in loader:
         x = x.to(device)
-        z = torch.randn(x.size(0), x.size(1), model.noise_dim, device=device)
 
-        # Generator/Supervisor update
-        model.discriminator.requires_grad_(False)
-        model.recovery.requires_grad_(False)
-        generator_optimizer.zero_grad()
+        for _ in range(2):
+            z = torch.randn(x.size(0), x.size(1), model.noise_dim, device=device)
 
-        loss_g = generator_loss(model, x, z)
+            # Generator/Supervisor update
+            model.discriminator.requires_grad_(False)
+            model.recovery.requires_grad_(False)
+            model.supervisor.requires_grad_(True)
 
-        loss_g.backward()
-        generator_optimizer.step()
+            generator_optimizer.zero_grad()
+            loss_g = generator_loss(model, x, z)
+            loss_g.backward()
+            generator_optimizer.step()
 
-        # Embedder/Recovery update
-        model.discriminator.requires_grad_(True)
-        model.recovery.requires_grad_(True)
-        embedder_optimizer.zero_grad()
+            total_g_loss += loss_g.item()
 
-        h = model.embedder(x)
-        x_hat = model.recovery(h)
+            # Embedder/Recovery update
+            model.supervisor.requires_grad_(False)
+            model.recovery.requires_grad_(True)
 
-        loss_r = torch.nn.functional.mse_loss(x_hat, x)
-        loss_s = torch.nn.functional.mse_loss(
-            model.supervisor(h)[:, :-1, :],
-            h[:, 1:, :]
-        )
+            embedder_optimizer.zero_grad()
+            h = model.embedder(x)
+            x_hat = model.recovery(h)
 
-        loss_e = 10 * torch.sqrt(loss_r + 1e-8) + 0.1 * loss_s
+            loss_r = torch.nn.functional.mse_loss(x_hat, x)
+            loss_s = torch.nn.functional.mse_loss(
+                model.supervisor(h)[:, :-1, :],
+                h[:, 1:, :]
+            )
 
-        loss_e.backward()
-        embedder_optimizer.step()
+            loss_e = 10 * torch.sqrt(loss_r + 1e-8) + 0.1 * loss_s
+
+            loss_e.backward()
+            embedder_optimizer.step()
+
+            total_e_loss += loss_e.item()
 
         # Discriminator update
+        model.supervisor.requires_grad_(True)
+        model.discriminator.requires_grad_(True)
+        z = torch.randn(x.size(0), x.size(1), model.noise_dim, device=device)
         discriminator_optimizer.zero_grad()
 
         loss_d = discriminator_loss(model, x, z)
-
         loss_d.backward()
         discriminator_optimizer.step()
 
-        # Update losses
-        total_g_loss += loss_g.item()
-        total_e_loss += loss_e.item()
         total_d_loss += loss_d.item()
 
     return (
-        total_g_loss/len(loader),
-        total_e_loss/len(loader),
-        total_d_loss/len(loader)
+        total_g_loss / (2 * len(loader)),
+        total_e_loss / (2 * len(loader)),
+        total_d_loss / len(loader)
     )
+
+def validate_timegan(model, loader, device):
+    model.eval()
+    total_loss = 0
+
+    with torch.no_grad():
+        for x, _ in loader:
+            x = x.to(device)
+
+            z = torch.randn(
+                x.size(0), x.size(1), model.noise_dim,
+                device=device
+            )
+
+            x_fake = model.generate(z)
+
+            real_mean = x.mean(dim=(0, 1))
+            fake_mean = x_fake.mean(dim=(0, 1))
+
+            real_std = x.std(dim=(0, 1), unbiased=False)
+            fake_std = x_fake.std(dim=(0, 1), unbiased=False)
+
+            loss = (
+                torch.mean(torch.abs(real_mean - fake_mean))
+                + torch.mean(torch.abs(real_std - fake_std))
+            )
+
+            total_loss += loss.item()
+
+    return total_loss / len(loader)
 
 def timegan():
     lr = 1e-3
-    embedder_epochs = 5
-    supervisor_epochs = 5
-    joint_epochs = 5
+    embedder_epochs = 50
+    supervisor_epochs = 50
+    joint_epochs = 100
 
-    train_set, val_set, test_set, norm = get_datasets("order_sample.csv")
-    # DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
-    # train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
+    DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
+    train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
 
     train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=64)
@@ -270,20 +304,22 @@ def timegan():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TimeGAN().to(device)
-    # checkpoint_dir = os.path.expanduser("~/TimeGANoutputs")
-    # os.makedirs(checkpoint_dir, exist_ok=True)
-    # norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))
+    checkpoint_dir = os.path.expanduser("~/TimeGANoutputs")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))
 
     embedder_optimizer = Adam(
         list(model.embedder.parameters()) +
         list(model.recovery.parameters()),
-        lr=lr,
+        lr=lr
     )
 
     for epoch in range(embedder_epochs):
         train_loss = pretrain_embedder(model, train_loader, device, embedder_optimizer)
         val_loss = pretrain_embedder(model, val_loader, device)
         print(f"Embedder Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
+
+    torch.save(model.state_dict(), os.path.join(checkpoint_dir, "timegan_embedder.pt"))
 
     supervisor_optimizer = Adam(
         model.supervisor.parameters(),
@@ -296,16 +332,26 @@ def timegan():
 
         print(f"Supervisor Epoch {epoch + 1}: Train={train_loss:.6f}, Val={val_loss:.6f}")
 
+    torch.save(model.state_dict(), os.path.join(checkpoint_dir, "timegan_supervisor.pt"))
+
     generator_optimizer = Adam(
         list(model.generator.parameters()) +
         list(model.supervisor.parameters()),
-        lr=lr
+        lr=1e-4
     )
 
     discriminator_optimizer = Adam(
         model.discriminator.parameters(),
-        lr=lr
+        lr=1e-4
     )
+
+    embedder_optimizer = Adam(
+        list(model.embedder.parameters()) +
+        list(model.recovery.parameters()),
+        lr=1e-4
+    )
+
+    best_val_loss = float("inf")
 
     for epoch in range(joint_epochs):
         g_loss, e_loss, d_loss = joint_train_epoch(
@@ -317,14 +363,20 @@ def timegan():
             discriminator_optimizer
         )
 
+        val_loss = validate_timegan(model, val_loader, device)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), os.path.join(checkpoint_dir, "timegan_best.pt"))
+
         print(
             f"Joint Epoch {epoch + 1}: "
             f"G={g_loss:.6f}, "
             f"E={e_loss:.6f}, "
-            f"D={d_loss:.6f}"
+            f"D={d_loss:.6f}, "
+            f"Val={val_loss:.6f}"
         )
 
-    torch.save(model.state_dict(), "timegan_final.pt")
+    torch.save(model.state_dict(), os.path.join(checkpoint_dir, "timegan_final.pt"))
 
 def main():
     model_type = "timegan"  # Change to "vae" for baseline
