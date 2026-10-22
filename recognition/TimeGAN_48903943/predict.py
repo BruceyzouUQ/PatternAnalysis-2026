@@ -53,17 +53,35 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
         for i in range(n)
     ]
 
-    vmax = max(img.max() for img in imgs)
+    real_samples = [
+        val_set[i][0].numpy()
+        for i in range(n)
+    ]
 
-    fig, axes = plt.subplots(1, n, figsize=(2 * n, 3))
-    for i, img in enumerate(imgs):
-        axes[i].imshow(img, aspect="auto", vmin=0, vmax=vmax)
-        axes[i].axis("off")
+    real_imgs = [
+        to_depth_heatmap(real_samples[i], mid, norm)
+        for i in range(n)
+    ]
 
-    axes[0].set_title("Random Samples", loc="left")
+    vmax = max(
+        max(img.max() for img in real_imgs),
+        max(img.max() for img in imgs)
+    )
+
+    fig, axes = plt.subplots(2, n, figsize=(2 * n, 5))
+
+    for i in range(n):
+        axes[0, i].imshow(real_imgs[i], aspect="auto", vmin=0, vmax=vmax)
+        axes[1, i].imshow(imgs[i], aspect="auto", vmin=0, vmax=vmax)
+
+        axes[0, i].axis("off")
+        axes[1, i].axis("off")
+
+    axes[0, 0].set_title("Real", loc="left")
+    axes[1, 0].set_title("TimeGAN", loc="left")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "randsamples.png"))
+    plt.savefig(os.path.join(output_dir, "real_vs_timegan.png"))
     plt.close()
 
 def main():
