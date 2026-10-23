@@ -47,15 +47,21 @@ def spread_ticks(Z, norm):
     spread = np.exp(log_spread)
     return spread.ravel()
 
-def kl_hist(real, gen, edges):
+def kl_hist(real, gen, edges, eps=1e-8):
     real_counts, _ = np.histogram(real, bins=edges)
     gen_counts, _ = np.histogram(gen, bins=edges)
 
     real_probs = real_counts / real_counts.sum()
     gen_probs = gen_counts / gen_counts.sum()
 
-    return real_probs, gen_probs
+    real_probs += eps
+    gen_probs += eps
 
+    real_probs /= real_probs.sum()
+    gen_probs /= gen_probs.sum()
+
+    kl = np.sum(real_probs * np.log(real_probs/gen_probs))
+    return float(kl)
 
 def main():
     model_type = "timegan"  # "vae" or "timegan"
@@ -95,23 +101,23 @@ def main():
     gen_Z = generate_samples(model, model_type, 2000, device)
     real_Z = test_set.Z.numpy()
 
-    print("Generated:", gen_Z.shape)
-    print("Real:", real_Z.shape)
-
-    print("Real violations:", rule_violations(real_Z, norm))
-    print("Generated violations:", rule_violations(gen_Z, norm))
+    # print("Generated:", gen_Z.shape)
+    # print("Real:", real_Z.shape)
+    #
+    # print("Real violations:", rule_violations(real_Z, norm))
+    # print("Generated violations:", rule_violations(gen_Z, norm))
 
     real_spread = spread_ticks(real_Z, norm)
     gen_spread = spread_ticks(gen_Z, norm)
 
-    print(real_spread.shape)
-    print(gen_spread.shape)
-
-    print("Real spread range:", real_spread.min(), real_spread.max())
-    print("Generated spread range:", gen_spread.min(), gen_spread.max())
-
-    print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
-    print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
+    # print(real_spread.shape)
+    # print(gen_spread.shape)
+    #
+    # print("Real spread range:", real_spread.min(), real_spread.max())
+    # print("Generated spread range:", gen_spread.min(), gen_spread.max())
+    #
+    # print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
+    # print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
 
     edges = np.concatenate([
         np.arange(0.5, 25.5, 1),
@@ -120,11 +126,15 @@ def main():
 
     real_probs, gen_probs = kl_hist(real_spread, gen_spread, edges)
 
-    print("Real probabilities:", real_probs)
-    print("Generated probabilities:", gen_probs)
+    # print("Real probabilities:", real_probs)
+    # print("Generated probabilities:", gen_probs)
+    #
+    # print("Real total:", real_probs.sum())
+    # print("Generated total:", gen_probs.sum())
 
-    print("Real total:", real_probs.sum())
-    print("Generated total:", gen_probs.sum())
+    print("Real vs Generated:", kl_hist(real_spread, gen_spread, edges))
+    print("Generated vs Real:", kl_hist(gen_spread, real_spread, edges))
+    print("Real vs Real:", kl_hist(real_spread, real_spread, edges))
 
 if __name__ == "__main__":
     main()
