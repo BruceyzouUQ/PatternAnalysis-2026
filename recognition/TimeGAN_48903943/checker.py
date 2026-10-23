@@ -142,6 +142,28 @@ def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output
     plt.close()
 
 
+# Temporal Metrics
+def abs_return_acf(returns, max_lag=20):
+    """
+    ACF of absolute returns at lags 1 to max_lag.
+    Input shape: (n_windows, window_length).
+    """
+    a = np.abs(np.asarray(returns, dtype=np.float64))
+
+    if a.ndim == 1:
+        a = a[None, :]
+
+    assert max_lag < a.shape[1]
+
+    a = a - a.mean()
+    var = np.mean(a * a)
+
+    return np.array([
+        np.mean(a[:, :-k] * a[:, k:]) / var
+        for k in range(1, max_lag + 1)
+    ])
+
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -260,6 +282,38 @@ def main():
         real_mid, gen_mids.reshape(-1),
         "ask", output_dir
     )
+
+    # Autocorrelation of absolute midprice returns
+    window = gen_returns.shape[1]
+
+    n_windows = len(real_returns) // window
+    real_return_windows = real_returns[:n_windows * window].reshape(
+        n_windows, window
+    )
+
+    real_acf = abs_return_acf(real_return_windows)
+    gen_acf = abs_return_acf(gen_returns)
+
+    print("Real ACF:", np.round(real_acf, 4))
+    print("Generated ACF:", np.round(gen_acf, 4))
+
+    # Plot ACF curves
+
+    lags = np.arange(1, len(real_acf) + 1)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(lags, real_acf, marker="o", label="Real")
+    plt.plot(lags, gen_acf, marker="o", label="Generated")
+
+    plt.axhline(0, color="gray", linestyle="--")
+    plt.xlabel("Lag (events)")
+    plt.ylabel("Autocorrelation")
+    plt.title("Absolute Midprice Return Autocorrelation")
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig(os.path.join(output_dir, "absolute_return_acf.png"), dpi=150)
+    plt.close()
 
 
 if __name__ == "__main__":
