@@ -74,6 +74,36 @@ def kl_hist(real, gen, edges, eps=1e-8):
     kl = np.sum(real_probs * np.log(real_probs/gen_probs))
     return float(kl)
 
+# VWAP
+
+# VWAP
+def calculate_vwap(X):
+    ask_prices = X[:, 0::4]
+    ask_volumes = X[:, 1::4]
+
+    bid_prices = X[:, 2::4]
+    bid_volumes = X[:, 3::4]
+
+    ask_total = ask_volumes.sum(axis=1)
+    bid_total = bid_volumes.sum(axis=1)
+
+    ask_vwap = np.divide(
+        (ask_prices * ask_volumes).sum(axis=1),
+        ask_total,
+        out=np.full(len(X), np.nan),
+        where=ask_total > 0
+    )
+
+    bid_vwap = np.divide(
+        (bid_prices * bid_volumes).sum(axis=1),
+        bid_total,
+        out=np.full(len(X), np.nan),
+        where=bid_total > 0
+    )
+
+    return bid_vwap, ask_vwap
+
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -141,6 +171,29 @@ def main():
     return_edges = np.linspace(-max_return, max_return, 42)
 
     print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
+
+    # VWAP calculation
+    real_mid = test_set.mid.numpy()
+    real_books = norm.inverse(real_Z, real_mid)
+
+    # Use a real midpoint as the starting price for synthetic windows
+    mid0 = np.full(len(gen_Z), real_mid[0])
+    gen_mids = norm.mid_path(gen_Z, mid0)
+
+    gen_books = np.concatenate([
+        norm.inverse(gen_Z[i], gen_mids[i])[None, :, :]
+        for i in range(len(gen_Z))
+    ], axis=0)
+
+    real_bid_vwap, real_ask_vwap = calculate_vwap(real_books)
+
+    gen_bid_vwap, gen_ask_vwap = calculate_vwap(
+        gen_books.reshape(-1, 40)
+    )
+
+    print("Real bid VWAP shape:", real_bid_vwap.shape)
+    print("Generated bid VWAP shape:", gen_bid_vwap.shape)
+
 
 if __name__ == "__main__":
     main()
