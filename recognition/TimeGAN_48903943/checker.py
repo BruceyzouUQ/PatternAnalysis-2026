@@ -47,6 +47,14 @@ def spread_ticks(Z, norm):
     spread = np.exp(log_spread)
     return spread.ravel()
 
+def kl_hist(real, gen, edges):
+    real_counts, _ = np.histogram(real, bins=edges)
+    gen_counts, _ = np.histogram(gen, bins=edges)
+
+    real_probs = real_counts / real_counts.sum()
+    gen_probs = gen_counts / gen_counts.sum()
+
+    return real_probs, gen_probs
 
 
 def main():
@@ -104,6 +112,19 @@ def main():
 
     print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
     print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
+
+    edges = np.concatenate([
+        np.arange(0.5, 25.5, 1),
+        [np.inf]
+    ])
+
+    real_probs, gen_probs = kl_hist(real_spread, gen_spread, edges)
+
+    print("Real probabilities:", real_probs)
+    print("Generated probabilities:", gen_probs)
+
+    print("Real total:", real_probs.sum())
+    print("Generated total:", gen_probs.sum())
 
 if __name__ == "__main__":
     main()
