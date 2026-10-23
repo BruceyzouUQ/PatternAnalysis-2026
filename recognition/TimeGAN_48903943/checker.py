@@ -47,7 +47,18 @@ def spread_ticks(Z, norm):
     spread = np.exp(log_spread)
     return spread.ravel()
 
+def midprice_returns(Z, norm):
+    Z = np.asarray(Z, dtype=np.float64)
+    original_shape = Z.shape[:-1]
+    returns = norm.r_scaler.inverse_transform(
+        Z[..., 39].reshape(-1, 1)
+    )
+    return returns.reshape(original_shape)
+
 def kl_hist(real, gen, edges, eps=1e-8):
+    real = np.clip(np.asarray(real).ravel(), edges[0], edges[-1])
+    gen = np.clip(np.asarray(gen).ravel(), edges[0], edges[-1])
+
     real_counts, _ = np.histogram(real, bins=edges)
     gen_counts, _ = np.histogram(gen, bins=edges)
 
@@ -101,40 +112,35 @@ def main():
     gen_Z = generate_samples(model, model_type, 2000, device)
     real_Z = test_set.Z.numpy()
 
-    # print("Generated:", gen_Z.shape)
-    # print("Real:", real_Z.shape)
-    #
+    # Financial validity
     # print("Real violations:", rule_violations(real_Z, norm))
     # print("Generated violations:", rule_violations(gen_Z, norm))
 
+    # KL spread
     real_spread = spread_ticks(real_Z, norm)
     gen_spread = spread_ticks(gen_Z, norm)
 
-    # print(real_spread.shape)
-    # print(gen_spread.shape)
-    #
     # print("Real spread range:", real_spread.min(), real_spread.max())
     # print("Generated spread range:", gen_spread.min(), gen_spread.max())
     #
     # print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
     # print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
 
-    edges = np.concatenate([
+    spread_edges = np.concatenate([
         np.arange(0.5, 25.5, 1),
         [np.inf]
     ])
 
-    real_probs, gen_probs = kl_hist(real_spread, gen_spread, edges)
+    print("Spread KL:", kl_hist(real_spread, gen_spread, spread_edges))
 
-    # print("Real probabilities:", real_probs)
-    # print("Generated probabilities:", gen_probs)
-    #
-    # print("Real total:", real_probs.sum())
-    # print("Generated total:", gen_probs.sum())
+    # KL midprice return
+    real_returns = midprice_returns(real_Z, norm)
+    gen_returns = midprice_returns(gen_Z, norm)
 
-    print("Real vs Generated:", kl_hist(real_spread, gen_spread, edges))
-    print("Generated vs Real:", kl_hist(gen_spread, real_spread, edges))
-    print("Real vs Real:", kl_hist(real_spread, real_spread, edges))
+    max_return = np.quantile(np.abs(real_returns), 0.999)
+    return_edges = np.linspace(-max_return, max_return, 42)
+
+    print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
 
 if __name__ == "__main__":
     main()
