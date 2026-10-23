@@ -23,18 +23,21 @@ def generate_samples(model, model_type, n, device, batch_size=64):
     return np.concatenate(samples, axis=0)
 
 # Financial validity
-def rule_violations(Z, norm, tol=1.0):
-    """Fraction of windows/events violating each rule, on UNCLAMPED values.
-    Run it on real data too: it should give ~0, which validates the checker."""
+def rule_violations(Z, norm, eps=1e-6):
     Z = np.asarray(Z, dtype=np.float64).reshape(-1, 40)
+
     gap = np.exp(norm.p_scaler.inverse_transform(Z[:, :18]))        # ticks
     vol = np.expm1(norm.v_scaler.inverse_transform(Z[:, 18:38]))    # shares
     spr = np.exp(norm.s_scaler.inverse_transform(Z[:, 38:39]).ravel())
+
     return {
-        "locked_or_crossed": np.mean(spr < tol),                    # < 1 tick after rounding
-        "ask_ladder":        np.mean((gap[:, :9] < tol).any(1)),
-        "bid_ladder":        np.mean((gap[:, 9:] < tol).any(1)),
-        "neg_volume":        np.mean((vol < -tol).any(1)),
+        "spread_below_one_tick":    np.mean(spr < 1.0 - eps),
+        "locked_or_crossed":        np.mean(spr <= 0),
+        "ask_gap_below_one_tick":   np.mean((gap[:, :9] < 1.0 - eps).any(axis=1)),
+        "bid_gap_below_one_tick":   np.mean((gap[:, 9:] < 1.0 - eps).any(axis=1)),
+        "ask_ladder":               np.mean((gap[:, :9] <= 0).any(axis=1)),
+        "bid_ladder":               np.mean((gap[:, 9:] <= 0).any(axis=1)),
+        "neg_volume":               np.mean((vol < -eps).any(axis=1)),
     }
 
 def main():
