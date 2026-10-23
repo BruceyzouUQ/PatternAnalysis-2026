@@ -24,6 +24,21 @@ def generate_samples(model, model_type, n, device, batch_size=64):
 
     return np.concatenate(samples, axis=0)
 
+# Financial validity
+def rule_violations(Z, norm, tol=1.0):
+    """Fraction of windows/events violating each rule, on UNCLAMPED values.
+    Run it on real data too: it should give ~0, which validates the checker."""
+    Z = np.asarray(Z, dtype=np.float64).reshape(-1, 40)
+    gap = np.exp(norm.p_scaler.inverse_transform(Z[:, :18]))        # ticks
+    vol = np.expm1(norm.v_scaler.inverse_transform(Z[:, 18:38]))    # shares
+    spr = np.exp(norm.s_scaler.inverse_transform(Z[:, 38:39]).ravel())
+    return {
+        "locked_or_crossed": np.mean(spr < tol),                    # < 1 tick after rounding
+        "ask_ladder":        np.mean((gap[:, :9] < tol).any(1)),
+        "bid_ladder":        np.mean((gap[:, 9:] < tol).any(1)),
+        "neg_volume":        np.mean((vol < -tol).any(1)),
+    }
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -58,6 +73,15 @@ def main():
     norm = LOBNormaliser.load(
         os.path.join(output_dir, "normaliser.joblib")
     )
+
+    gen_Z = generate_samples(model, model_type, 2000, device)
+    real_Z = test_set.Z.numpy()
+
+    print("Generated:", gen_Z.shape)
+    print("Real:", real_Z.shape)
+
+    print("Real violations:", rule_violations(real_Z, norm))
+    print("Generated violations:", rule_violations(gen_Z, norm))
 
 if __name__ == "__main__":
     main()
