@@ -191,8 +191,14 @@ def main():
         gen_books.reshape(-1, 40)
     )
 
-    print("Real bid VWAP shape:", real_bid_vwap.shape)
-    print("Generated bid VWAP shape:", gen_bid_vwap.shape)
+    print("Real bid VWAP finite:", np.isfinite(real_bid_vwap).all())
+    print("Real ask VWAP finite:", np.isfinite(real_ask_vwap).all())
+
+    print("Generated bid VWAP finite:", np.isfinite(gen_bid_vwap).all())
+    print("Generated ask VWAP finite:", np.isfinite(gen_ask_vwap).all())
+
+    print("Real bid < ask:", np.mean(real_bid_vwap < real_ask_vwap))
+    print("Generated bid < ask:", np.mean(gen_bid_vwap < gen_ask_vwap))
 
 
 if __name__ == "__main__":
