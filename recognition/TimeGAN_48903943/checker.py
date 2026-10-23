@@ -41,7 +41,7 @@ def rule_violations(Z, norm, eps=1e-6):
     }
 
 def main():
-    model_type = "timegan"  # "vae" or "timegan"
+    model_type = "vae"  # "vae" or "timegan"
 
     DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
     train_set, val_set, test_set, _ = get_datasets(DATA_PATH)
