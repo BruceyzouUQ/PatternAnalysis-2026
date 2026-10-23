@@ -103,6 +103,16 @@ def calculate_vwap(X):
 
     return bid_vwap, ask_vwap
 
+def vwap_stats(bid_vwap, ask_vwap, mid):
+    bid_offset = (mid - bid_vwap) / 100
+    ask_offset = (ask_vwap - mid) / 100
+
+    return {
+        "bid_mean": np.mean(bid_offset),
+        "bid_variance": np.var(bid_offset),
+        "ask_mean": np.mean(ask_offset),
+        "ask_variance": np.var(ask_offset)
+    }
 
 def main():
     model_type = "timegan"  # "vae" or "timegan"
@@ -161,7 +171,7 @@ def main():
         [np.inf]
     ])
 
-    print("Spread KL:", kl_hist(real_spread, gen_spread, spread_edges))
+    # print("Spread KL:", kl_hist(real_spread, gen_spread, spread_edges))
 
     # KL midprice return
     real_returns = midprice_returns(real_Z, norm)
@@ -170,7 +180,7 @@ def main():
     max_return = np.quantile(np.abs(real_returns), 0.999)
     return_edges = np.linspace(-max_return, max_return, 42)
 
-    print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
+    # print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
 
     # VWAP calculation
     real_mid = test_set.mid.numpy()
@@ -191,15 +201,24 @@ def main():
         gen_books.reshape(-1, 40)
     )
 
-    print("Real bid VWAP finite:", np.isfinite(real_bid_vwap).all())
-    print("Real ask VWAP finite:", np.isfinite(real_ask_vwap).all())
+    # print("Real bid VWAP finite:", np.isfinite(real_bid_vwap).all())
+    # print("Real ask VWAP finite:", np.isfinite(real_ask_vwap).all())
+    #
+    # print("Generated bid VWAP finite:", np.isfinite(gen_bid_vwap).all())
+    # print("Generated ask VWAP finite:", np.isfinite(gen_ask_vwap).all())
+    #
+    # print("Real bid < ask:", np.mean(real_bid_vwap < real_ask_vwap))
+    # print("Generated bid < ask:", np.mean(gen_bid_vwap < gen_ask_vwap))
 
-    print("Generated bid VWAP finite:", np.isfinite(gen_bid_vwap).all())
-    print("Generated ask VWAP finite:", np.isfinite(gen_ask_vwap).all())
+    real_stats = vwap_stats(real_bid_vwap, real_ask_vwap, real_mid)
+    gen_stats = vwap_stats(
+        gen_bid_vwap,
+        gen_ask_vwap,
+        gen_mids.reshape(-1)
+    )
 
-    print("Real bid < ask:", np.mean(real_bid_vwap < real_ask_vwap))
-    print("Generated bid < ask:", np.mean(gen_bid_vwap < gen_ask_vwap))
-
+    print("Real VWAP stats:", real_stats)
+    print("Generated VWAP stats:", gen_stats)
 
 if __name__ == "__main__":
     main()
