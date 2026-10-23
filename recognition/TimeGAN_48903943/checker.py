@@ -102,5 +102,8 @@ def main():
     print("Real spread range:", real_spread.min(), real_spread.max())
     print("Generated spread range:", gen_spread.min(), gen_spread.max())
 
+    print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
+    print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
+
 if __name__ == "__main__":
     main()
