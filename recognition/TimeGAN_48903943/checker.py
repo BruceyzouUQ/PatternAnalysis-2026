@@ -1,6 +1,4 @@
 import numpy as np
-from scipy.stats import kurtosis
-from skimage.metrics import structural_similarity
 from dataset import get_datasets, LOBNormaliser
 from modules import TimeVAE, TimeGAN
 import torch
