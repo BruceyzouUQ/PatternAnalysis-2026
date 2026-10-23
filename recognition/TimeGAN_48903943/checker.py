@@ -3,6 +3,7 @@ from dataset import get_datasets, LOBNormaliser
 from modules import TimeVAE, TimeGAN
 import torch
 import os
+import matplotlib.pyplot as plt
 
 # Model Sampling
 def generate_samples(model, model_type, n, device, batch_size=64):
@@ -114,6 +115,33 @@ def vwap_stats(bid_vwap, ask_vwap, mid):
         "ask_variance": np.var(ask_offset)
     }
 
+
+def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output_dir):
+    if side == "bid":
+        real_offsets = (real_mid - real_vwap) / 100
+        gen_offsets = (gen_mid - gen_vwap) / 100
+    else:
+        real_offsets = (real_vwap - real_mid) / 100
+        gen_offsets = (gen_vwap - gen_mid) / 100
+
+    # Shared bin edges for a fair comparison
+    combined = np.concatenate([real_offsets, gen_offsets])
+    bins = np.histogram_bin_edges(combined, bins=60)
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(real_offsets, bins=bins, density=True, alpha=0.5, label="Real")
+    plt.hist(gen_offsets, bins=bins, density=True, alpha=0.5, label="Generated")
+
+    plt.xlabel(f"{side.capitalize()} VWAP offset from midpoint (ticks)")
+    plt.ylabel("Probability density")
+    plt.title(f"{side.capitalize()} VWAP Distribution")
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig(os.path.join(output_dir, f"{side}_vwap_distribution.png"), dpi=150)
+    plt.close()
+
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -219,6 +247,20 @@ def main():
 
     print("Real VWAP stats:", real_stats)
     print("Generated VWAP stats:", gen_stats)
+
+    # VWAP distributions
+    plot_vwap_distributions(
+        real_bid_vwap, gen_bid_vwap,
+        real_mid, gen_mids.reshape(-1),
+        "bid", output_dir
+    )
+
+    plot_vwap_distributions(
+        real_ask_vwap, gen_ask_vwap,
+        real_mid, gen_mids.reshape(-1),
+        "ask", output_dir
+    )
+
 
 if __name__ == "__main__":
     main()
