@@ -40,8 +40,17 @@ def rule_violations(Z, norm, eps=1e-6):
         "neg_volume":               np.mean((vol < -eps).any(axis=1)),
     }
 
+# KL spread and midprice return
+def spread_ticks(Z, norm):
+    Z = np.asarray(Z).reshape(-1, 40)
+    log_spread = norm.s_scaler.inverse_transform(Z[:, 38:39])
+    spread = np.exp(log_spread)
+    return spread.ravel()
+
+
+
 def main():
-    model_type = "vae"  # "vae" or "timegan"
+    model_type = "timegan"  # "vae" or "timegan"
 
     DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
     train_set, val_set, test_set, _ = get_datasets(DATA_PATH)
@@ -83,6 +92,15 @@ def main():
 
     print("Real violations:", rule_violations(real_Z, norm))
     print("Generated violations:", rule_violations(gen_Z, norm))
+
+    real_spread = spread_ticks(real_Z, norm)
+    gen_spread = spread_ticks(gen_Z, norm)
+
+    print(real_spread.shape)
+    print(gen_spread.shape)
+
+    print("Real spread range:", real_spread.min(), real_spread.max())
+    print("Generated spread range:", gen_spread.min(), gen_spread.max())
 
 if __name__ == "__main__":
     main()
