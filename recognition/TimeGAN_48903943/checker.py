@@ -1,6 +1,7 @@
 import numpy as np
 from dataset import get_datasets, LOBNormaliser
 from modules import TimeVAE, TimeGAN
+from scipy.stats import kurtosis
 import torch
 import os
 import matplotlib.pyplot as plt
@@ -141,7 +142,6 @@ def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output
     plt.savefig(os.path.join(output_dir, f"{side}_vwap_distribution.png"), dpi=150)
     plt.close()
 
-
 # Temporal Metrics
 def abs_return_acf(returns, max_lag=20):
     """
@@ -163,6 +163,12 @@ def abs_return_acf(returns, max_lag=20):
         for k in range(1, max_lag + 1)
     ])
 
+def tail_stats(returns, qs=(0.01, 0.05, 0.95, 0.99)):
+    r = np.asarray(returns, dtype=np.float64).ravel()
+    out = {"std": r.std(), "excess_kurtosis": kurtosis(r)}   # scipy default = excess
+    for q, v in zip(qs, np.quantile(r, qs)):
+        out[f"q{q}"] = v
+    return out
 
 def main():
     model_type = "timegan"  # "vae" or "timegan"
@@ -315,6 +321,12 @@ def main():
     plt.savefig(os.path.join(output_dir, "absolute_return_acf.png"), dpi=150)
     plt.close()
 
+    # Heavy-tail statistics
+    real_tails = tail_stats(real_returns)
+    gen_tails = tail_stats(gen_returns)
+
+    print("Real return statistics:", real_tails)
+    print("Generated return statistics:", gen_tails)
 
 if __name__ == "__main__":
     main()
