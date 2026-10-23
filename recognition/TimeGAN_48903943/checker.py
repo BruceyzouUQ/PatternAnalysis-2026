@@ -2,6 +2,7 @@ import numpy as np
 from dataset import get_datasets, LOBNormaliser
 from modules import TimeVAE, TimeGAN
 from scipy.stats import kurtosis
+from skimage.metrics import structural_similarity
 import torch
 import os
 import matplotlib.pyplot as plt
@@ -170,6 +171,35 @@ def tail_stats(returns, qs=(0.01, 0.05, 0.95, 0.99)):
         out[f"q{q}"] = v
     return out
 
+# SSIM
+def heatmap(Z, norm, use_log=True):
+    """One normalised (64, 40) window -> (20, 64) depth heatmap."""
+    dummy_mid = np.full(len(Z), 1e6)
+    real = norm.inverse(Z, dummy_mid)
+
+    img = np.vstack((
+        real[:, 1::4].T[::-1],
+        real[:, 3::4].T
+    ))
+
+    return np.log1p(img) if use_log else img
+
+def mean_ssim(a_imgs, b_imgs, data_range):
+    """Mean SSIM over index-paired images."""
+    return float(np.mean([
+        structural_similarity(a, b, data_range=data_range)
+        for a, b in zip(a_imgs, b_imgs)
+    ]))
+
+
+def nn_ssim(gen_imgs, real_imgs, data_range):
+    """For each generated image, find its highest SSIM against real images."""
+    return float(np.mean([
+        max(structural_similarity(g, r, data_range=data_range)
+            for r in real_imgs)
+        for g in gen_imgs
+    ]))
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -327,6 +357,29 @@ def main():
 
     print("Real return statistics:", real_tails)
     print("Generated return statistics:", gen_tails)
+
+    # SSIM
+    rng = np.random.default_rng(42)
+
+    # Select two independent sets of 300 real windows
+    idx_a = rng.choice(len(test_set), 300, replace=False)
+    idx_b = rng.choice(len(test_set), 300, replace=False)
+
+    real_a = [heatmap(test_set[i][0].numpy(), norm) for i in idx_a]
+    real_b = [heatmap(test_set[i][0].numpy(), norm) for i in idx_b]
+
+    # Select 300 generated windows
+    gen_imgs = [heatmap(z, norm) for z in gen_Z[:300]]
+
+    # Shared intensity range
+    all_imgs = real_a + real_b + gen_imgs
+    data_range = max(img.max() for img in all_imgs) - min(img.min() for img in all_imgs)
+
+    # SSIM comparisons
+    print("Real vs Real SSIM:", mean_ssim(real_a, real_b, data_range))
+    print("Generated vs Real SSIM:", mean_ssim(gen_imgs, real_b, data_range))
+    print("Generated nearest Real SSIM:", nn_ssim(gen_imgs[:100], real_a, data_range))
+
 
 if __name__ == "__main__":
     main()
