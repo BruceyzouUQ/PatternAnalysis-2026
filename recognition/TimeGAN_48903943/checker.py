@@ -239,25 +239,25 @@ def main():
     real_Z = test_set.Z.numpy()
 
     # Financial validity
-    # print("Real violations:", rule_violations(real_Z, norm))
-    # print("Generated violations:", rule_violations(gen_Z, norm))
+    print("Real violations:", rule_violations(real_Z, norm))
+    print("Generated violations:", rule_violations(gen_Z, norm))
 
     # KL spread
     real_spread = spread_ticks(real_Z, norm)
     gen_spread = spread_ticks(gen_Z, norm)
 
-    # print("Real spread range:", real_spread.min(), real_spread.max())
-    # print("Generated spread range:", gen_spread.min(), gen_spread.max())
-    #
-    # print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
-    # print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
+    print("Real spread range:", real_spread.min(), real_spread.max())
+    print("Generated spread range:", gen_spread.min(), gen_spread.max())
+
+    print("Real percentiles:", np.percentile(real_spread, [50, 90, 95, 99]))
+    print("Generated percentiles:", np.percentile(gen_spread, [50, 90, 95, 99]))
 
     spread_edges = np.concatenate([
         np.arange(0.5, 25.5, 1),
         [np.inf]
     ])
 
-    # print("Spread KL:", kl_hist(real_spread, gen_spread, spread_edges))
+    print("Spread KL:", kl_hist(real_spread, gen_spread, spread_edges))
 
     # KL midprice return
     real_returns = midprice_returns(real_Z, norm)
@@ -266,7 +266,7 @@ def main():
     max_return = np.quantile(np.abs(real_returns), 0.999)
     return_edges = np.linspace(-max_return, max_return, 42)
 
-    # print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
+    print("Return KL:", kl_hist(real_returns, gen_returns, return_edges))
 
     # VWAP calculation
     real_mid = test_set.mid.numpy()
@@ -287,14 +287,14 @@ def main():
         gen_books.reshape(-1, 40)
     )
 
-    # print("Real bid VWAP finite:", np.isfinite(real_bid_vwap).all())
-    # print("Real ask VWAP finite:", np.isfinite(real_ask_vwap).all())
-    #
-    # print("Generated bid VWAP finite:", np.isfinite(gen_bid_vwap).all())
-    # print("Generated ask VWAP finite:", np.isfinite(gen_ask_vwap).all())
-    #
-    # print("Real bid < ask:", np.mean(real_bid_vwap < real_ask_vwap))
-    # print("Generated bid < ask:", np.mean(gen_bid_vwap < gen_ask_vwap))
+    print("Real bid VWAP finite:", np.isfinite(real_bid_vwap).all())
+    print("Real ask VWAP finite:", np.isfinite(real_ask_vwap).all())
+
+    print("Generated bid VWAP finite:", np.isfinite(gen_bid_vwap).all())
+    print("Generated ask VWAP finite:", np.isfinite(gen_ask_vwap).all())
+
+    print("Real bid < ask:", np.mean(real_bid_vwap < real_ask_vwap))
+    print("Generated bid < ask:", np.mean(gen_bid_vwap < gen_ask_vwap))
 
     real_stats = vwap_stats(real_bid_vwap, real_ask_vwap, real_mid)
     gen_stats = vwap_stats(
