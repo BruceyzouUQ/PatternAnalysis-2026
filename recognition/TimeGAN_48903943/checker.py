@@ -372,8 +372,12 @@ def main():
     gen_imgs = [heatmap(z, norm) for z in gen_Z[:300]]
 
     # Shared intensity range
-    all_imgs = real_a + real_b + gen_imgs
-    data_range = max(img.max() for img in all_imgs) - min(img.min() for img in all_imgs)
+    real_imgs = real_a + real_b
+
+    data_range = (
+            max(img.max() for img in real_imgs)
+            - min(img.min() for img in real_imgs)
+    )
 
     # SSIM comparisons
     print("Real vs Real SSIM:", mean_ssim(real_a, real_b, data_range))
