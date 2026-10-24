@@ -201,7 +201,7 @@ def nn_ssim(gen_imgs, real_imgs, data_range):
     ]))
 
 def main():
-    model_type = "timegan"  # "vae" or "timegan"
+    model_type = "vae"  # "vae" or "timegan"
 
     DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
     train_set, val_set, test_set, _ = get_datasets(DATA_PATH)
