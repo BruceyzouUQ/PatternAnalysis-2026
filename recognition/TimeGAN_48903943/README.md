@@ -120,6 +120,67 @@ Evaluation metrics are fully reproducible as model weights are saved after train
 sampling seed is fixed for numpy and pytorch. Training reproducibility is not guaranteed as 
 model weights are randomised on initialisation and dataloaders shuffle batches.
 
+## Data Preprocessing
+Preprocessing on raw LOB data is important to improve training stability and also some 
+transformations to the data can make it easier for the model to learn certain relationships.
+
+### Price Gaps
+The choice to use price gaps between levels instead of raw ask/bid prices was important as it 
+helps the model learn relationships between levels instead of possibly treating each level as 
+isolated. This was calculated by taking the difference between each level at every time step. We 
+divide by CENT = 100 here since LOB data represents data such that 1 cent is 100 units so 1c = 
+100 and $1 = 10000.
+```
+ask_p, ask_v = X[:, 0::4], X[:, 1::4]
+bid_p, bid_v = X[:, 2::4], X[:, 3::4]
+
+ask_gap = np.diff(ask_p, axis=1) / CENT
+bid_gap = -np.diff(bid_p, axis=1) / CENT
+```
+There are 10 levels for asks and bids each step resulting in 9 ask price gaps and 9 bid price 
+gaps meaning 18 price gap features every step.
+
+### Ask-Bid Spread
+Another feature that was deemed important for the model to learn separately was the spread value 
+of every step. Spread is the difference between the best ask and best bid where 'best' means 
+level 1. This captures the separation between buying and selling prices and is important for 
+evaluation metrics.
+```
+spread = (ask_p[:, 0] - bid_p[:, 0]) / CENT
+```
+Here, we're taking the difference between the ask price and bid price on the first column which 
+corresponds to level 1.
+
+### Mid-Price Returns
+Similarly to spread, mid-price returns is another feature required for evaluation and helps the 
+model learn price movements between consecutive events. Mid-price is the average price between 
+the best ask price and best bid price and mid-price returns is how much the mid-price changed 
+from the last event.
+```
+mid = (ask_p[:, 0] + bid_p[:, 0]) / 2
+
+ret = np.diff(np.log(mid), prepend=np.log(mid[0]))
+```
+Here, we first prepend 0 to the first mid-price return since the first entry does not have a 
+previous event to calculate change from. We take the log of the mid-price to preserve relative 
+price changes instead of absolute changes. For example, 10 increasing to 20 
+is only a flat 10 change, but is actually a 100% increase, whereas 1000 increasing to 1010 is the 
+same flat increase but only a 1% increase.
+
+### Order Volumes
+
+
+### Train, Validation, Test Split
+For model training and evaluation, a 70:15:15 train-validation-test chronological split was 
+chosen. This means the first 70% of rows were used for training, the next 15% were for 
+validation and the final 15% were for testing. We choose chronological splitting instead of 
+random splitting (common in other MLPs) to preserve the dataset's time ordering. 
+This makes sense for time series data, such as LOBs, where the goal is to produce synthetic 
+sequences based on past data. This time-based splitting allows us to treat the first 70% of data 
+as 'seen' historical observations and the rest as 'unseen' future data that we can evaluate 
+performance against. The validation set is used for model selection and monitoring training 
+performance, while the test set is a final evaluation of the synthetic samples' financial plausibility.
+
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
 
