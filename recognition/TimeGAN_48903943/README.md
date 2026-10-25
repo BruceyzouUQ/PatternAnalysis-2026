@@ -102,6 +102,19 @@ be to simplify the architecture proposed by Yoon et al. and instead return to ju
 generator-discriminator model where time series relationships are still learnt. This would be 
 more similar to the C-RNN-GAN or RCGAN that Yoon et al. proposed.
 
+## Dependencies
+Below are the list of dependencies in 'name - version - use' format
+1. Python - 3.11.15 - programming language
+2. PyTorch - 2.13.0 - machine learning library
+3. NumPy - 2.4.6 - numerical operations
+4. scikit-learn - 1.9.0 - feature standardisation
+5. SciPy - 1.17.1 - statistical evaluation
+6. scikit-image - 0.26.0 - SSIM evaluation
+7. Matplotlib - 3.11.1 - data visualisation
+8. Joblib - 1.6.0 - normaliser persistence
+
+Training was completed on UQ's Rangpur cluster using NVIDIA A100 GPU with VRAM of 40GB
+
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
 
