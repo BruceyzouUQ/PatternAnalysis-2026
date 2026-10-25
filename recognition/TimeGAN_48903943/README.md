@@ -115,6 +115,11 @@ Below are the list of dependencies in 'name - version - use' format
 
 Training was completed on UQ's Rangpur cluster using NVIDIA A100 GPU with VRAM of 40GB
 
+## Reproducibility
+Evaluation metrics are fully reproducible as model weights are saved after training and random 
+sampling seed is fixed for numpy and pytorch. Training reproducibility is not guaranteed as 
+model weights are randomised on initialisation and dataloaders shuffle batches.
+
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
 
