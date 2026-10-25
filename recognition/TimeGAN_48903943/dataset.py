@@ -41,14 +41,17 @@ def make_features(X):
 class LOBNormaliser:
     def fit(self, X_train):
         P, V, _, S, R = make_features(X_train)
-        self.p_scaler = StandardScaler().fit(P)
-        self.v_scaler = StandardScaler().fit(V)
-        self.s_scaler = StandardScaler().fit(S[:, None])
-        self.r_scaler = StandardScaler().fit(R[:, None])
+
+        # Calculate and store statistics for standard distribution
+        self.p_scaler = StandardScaler().fit(P)  # Price gaps (18 features)
+        self.v_scaler = StandardScaler().fit(V)  # Volumes (20 features)
+        self.s_scaler = StandardScaler().fit(S[:, None])  # Spread (1 feature)
+        self.r_scaler = StandardScaler().fit(R[:, None])  # Mid-price returns (1 feature)
         return self
 
     def transform(self, X):
         P, V, mid, spread, ret = make_features(X)
+        # Transform data using corresponding statistics and concat into standardised feature matrix
         Z = np.concatenate([
             self.p_scaler.transform(P),
             self.v_scaler.transform(V),
