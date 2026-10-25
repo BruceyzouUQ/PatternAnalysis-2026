@@ -7,6 +7,10 @@ import torch
 import os
 import matplotlib.pyplot as plt
 
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+
 # Model Sampling
 def generate_samples(model, model_type, n, device, batch_size=64):
     samples = []
@@ -359,7 +363,7 @@ def main():
     print("Generated return statistics:", gen_tails)
 
     # SSIM
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(SEED)
 
     # Select two independent sets of 300 real windows
     idx_a = rng.choice(len(test_set), 300, replace=False)
