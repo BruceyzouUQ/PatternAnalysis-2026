@@ -46,7 +46,7 @@ increase with level, the bid ladder must monotonically decrease with level, volu
 and bid sizes must be non-negative, produce authentic volatility clustering (big moves are 
 followed by big moves and small moves are followed by small moves), produce heavy-tailed 
 return distributions (clear positive excess kurtosis and tail quantiles match the real data to 
-some degree), have a KL (Kullback-Leibler) divergence of ≤ 0.1 on spread and midprice returns 
+some degree), have a KL (Kullback-Leibler) divergence of ≤ 0.1 on spread and mid-price returns 
 and a SSIM (structural similarity) > 0.6 on depth heatmaps (price levels × time steps).
 
 **2. Model Choice & Course Concepts**
@@ -292,6 +292,151 @@ sequences based on past data. This time-based splitting allows us to treat the f
 as 'seen' historical observations and the rest as 'unseen' future data that we can evaluate 
 performance against. The validation set is used for model selection and monitoring training 
 performance, while the test set is a final evaluation of the synthetic samples' financial plausibility.
+
+## Evaluating TimeGAN
+To evaluate how well the TimeGAN performed, i.e. how realistic its generated sequences were, we 
+use quantitative metrics derived from the acceptance criteria specified in the 
+feasibility review. Then, we can compare TimeGAN's metrics to the baseline model's (TimeVAE) to 
+see what aspects it performed better at and worse at.
+
+### Financial Validity
+The first set of metrics determine if the generated sequences are financially valid. We check if 
+the synthetic outputs are violating hard constraints on limit order books. Metrics will be 
+recorded as a violation percentage calculated by (events with violations)/(total number of 
+events). Remember, 2000 windows were generated each with 64 events totalling 128,000 events. 
+Here, we will also introduce the tick, which is the minimum amount a price can move up or down by, 
+which is 1 cent in the American stock market.
+
+Before we begin analysis, there's an important disclaimer to be made. Spread, price gaps and 
+volume can be learned by the model as an invalid value i.e. less than 1 tick for spread and gaps 
+and negative for volume. These values are corrected during post-processing (transform generated 
+sequences back to limit order book form) to produce artefacts that do not violate hard rules. 
+This means some metrics can be calculated before post-processing to discover purely what the model 
+learned, but other metrics (particularly VWAP and SSIM) require the generated sequences to be 
+transformed back into limit order book form to compare with real data.
+
+The below violation percentages are all calculated before post-processing as afterwards, these 
+will all become 0%. 
+
+| Metric                                | Real | TimeGAN  | TimeVAE  |
+|---------------------------------------|------|----------|----------|
+| Locked/crossed book (spread < 1 tick) | 0%   | 0.00078% | 0.01328% |
+| Invalid ask ladder (gap < 1 tick)     | 0%   | 82.92%   | 37.90%   |
+| Invalid bid ladder (gap < 1 tick)     | 0%   | 79.98%   | 35.95%   |
+| Negative volume                       | 0%   | 1.632%   | 0.0523%  |
+
+Firstly, both models had relatively high violations when it came to the ask ladder being strictly 
+increasing and the bid ladder being strictly decreasing. Recall that every event has 9 ask gaps 
+and 9 bid gaps and if a single one of these values is lower than 1 tick, the whole event will be 
+treated as a violation. The example below illustrates this.
+
+| Level      | 1  | 2  | 3  |
+|------------|----|----|----|
+| Ask Prices | 30 | 32 | 35 |
+| Bid Prices | 20 | 21 | 17 |
+
+The ask prices are strictly increasing as level increases, therefore no violation so far. 
+However, bid prices increase from level 1 to level 2 even though it decreases again at level 3. 
+This single violation (bid 1 -> bid 2) would mark this whole event as a violation.
+
+Overall, the baseline model outperforms the TimeGAN at learning ask/bid ladder structure and 
+that volumes are non-negative by having much lower violation percentages in those metrics. The 
+TimeGAN is better at producing non-locked/crossed books having only 0.00078% of entries 
+violating the constraint whereas the TimeVAE had 0.01328% violation.
+
+### KL Divergence on Spread and Mid-price Returns
+KL divergence is a measure of different two distributions are with a score of 0 meaning 
+identical distributions. The goal is to generate synthetic samples with a distribution on spread 
+and mid-price returns as close to the real data as possible as this means the model successfully 
+learned the actual market's distributions. 
+
+| Metric                          | TimeGAN | TimeVAE |
+|---------------------------------|---------|---------|
+| Spread KL Divergence            | 0.2927  | 0.4949  |
+| Mid-price Returns KL Divergence | 1.4173  | 0.7733  |
+
+The TimeGAN did a better job at replicating the distribution of spread values whereas the 
+baseline model outperformed the TimeGAN when learning the distribution of mid-price returns. 
+
+Taking a closer look at spread distribution in particular, we get the below table where values 
+are given as ticks. We interpret it as, 50% of spread values in the real data are 9 ticks or 
+lower whereas 50% of spread values in the TimeGAN generated data are 12.30 ticks or lower. 
+This means the TimeGAN tends to produce higher spread values more frequently than a real limit order 
+book.
+
+| Statistic                | Real   | TimeGAN | TimeVAE |
+|--------------------------|--------|---------|---------|
+| Minimum                  | 1.00   | 0.92    | 0.57    |
+| Median (50th percentile) | 9.00   | 12.30   | 13.82   |
+| 90th percentile          | 16.00  | 21.34   | 18.36   |
+| 95th percentile          | 17.00  | 24.70   | 19.78   |
+| 95th percentile          | 20.00  | 32.61   | 23.10   |
+| Maximum                  | 24.00  | 111.40  | 41.08   |
+
+We see that TimeGAN produces spread values closer to the real distribution near the median, 
+whereas the baseline model performs better in upper percentiles. Both models tend to produce 
+higher spread values more frequently than they realistically should, but the TimeGAN overall 
+performs better considering its lower KL divergence as well.
+
+### VWAP
+VWAP (Volume Weighted Average Price) is a way to calculate the average price of all asks and 
+bids in an entry while weighting by volume so orders with higher volume matter more. It is 
+calculated like so:
+
+![vwap calculation](vwap.png)
+
+Where i = level (1-10), P = price, V = volume.
+
+VWAP can be used to estimate how offset asks and bids are from the mid-price which allows us to 
+evaluate how well models can reproduce the price and volume structure of real LOBs. With every 
+entry having an associated VWAP for ask and bid, we can create a distribution on the difference in 
+ticks between VWAP values and their corresponding mid-price. We interpret the below table as, on 
+average, real ask VWAPs are higher than the mid-price by 13.1633 ticks with a variance of 8.8733 
+ticks<sup>2</sup>. Furthermore, the TimeGAN's bid VWAPs are lower than the mid-price by 16.5922 
+ticks on average with a variance of 19.8114 ticks<sup>2</sup>.
+
+| Statistic                | Real    | TimeGAN    | TimeVAE  |
+|--------------------------|---------|------------|----------|
+| Ask VWAP offset mean     | 13.1633 | 16.1711    | 15.6983  |
+| Ask VWAP offset variance | 8.8733  | 19.8297    | 9.4046   |
+| Bid VWAP offset mean     | 13.0013 | 16.5922    | 15.8360  |
+| Bid VWAP offset variance | 7.1712  | 19.8114    | 9.8252   |
+
+The baseline model performs slightly better at reproducing realistic mean VWAP offset values and 
+performs much better at modelling VWAP offset variance where its values (9.4046 for asks, 9.8252 
+for bids) are much closer to the real data's values (8.8733 for asks, 7.1712 for bids) than 
+TimeGAN's is. TimeGAN's offset variance values are much higher suggesting the price 
+and volume structure in TimeGAN's generations may be too volatile to model a realistic LOB.
+
+### Temporal Dynamics - Autocorrelation
+Autocorrelation is a metric we can use to evaluate how strongly data is related to itself in the 
+past i.e. some number of events ago also known as lag (a lag of 1 compares two consecutive events, 
+whereas a lag of 10 measures relatedness of two events 10 apart).
+We can compare our generative model's autocorrelation 
+values to the real data's values to see if similar temporal relationships are being learned. 
+Autocorrelation is a value from -1 to 1, where -1 means strong negative relationship, 0 means no 
+linear relationship and 1 means strong positive relationship. 
+
+First, observing TimeGAN's autocorrelation against real data.
+![TimeGAN Autocorrelation](ac_gan.png)
+
+Figure X: TimeGAN vs Real Autocorrelation
+
+Here, both the TimeGAN and real data have relatively strong positive relationship between 
+consecutive events, but TimeGAN's autocorrelation steadily falls (almost to 0) as events lag 
+further apart. In the real data, relatedness quickly drops off and stagnates around 0.1 to 0.15. 
+TimeGAN picks up that events close together should be related but fails to maintain this with 
+two events around 8 or more apart.
+
+The TimeVAE on the other hand, produces wild oscillating autocorrelation values with negative 
+values at odd lags and quite high positive values at even lags. Further, investigation is 
+required to pinpoint the root of this behaviour but because the baseline model is not the focus 
+of the project, the current verdict is that the TimeGAN does a better job at modelling the 
+relatedness of sequential events.
+
+![TimeVAE Autocorrelation](ac_vae.png)
+
+Figure X: TimeVAE vs Real Autocorrelation
 
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
