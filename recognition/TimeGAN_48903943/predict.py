@@ -84,13 +84,7 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
     plt.savefig(os.path.join(output_dir, "real_vs_timegan.png"))
     plt.close()
 
-def plot_example_output(model, norm, device, output_dir):
-    model.eval()
-
-    with torch.no_grad():
-        z = torch.randn(1, 64, model.noise_dim, device=device)
-        generated = model.generate(z)[0].cpu().numpy()
-
+def plot_example_output(generated, norm, device, output_dir):
     # Volumes are independent of the absolute midpoint,
     # so an arbitrary midpoint is sufficient for this heatmap.
     dummy_mid = np.full(64, 1e6)
@@ -117,6 +111,36 @@ def plot_example_output(model, norm, device, output_dir):
         os.path.join(output_dir, "example_output.png"),
         dpi=150
     )
+    plt.close()
+
+def plot_example_prices(generated, norm, val_set, device, output_dir):
+    # Use a real starting midpoint so absolute prices can be reconstructed
+    mid0 = val_set[0][1][0].item()
+
+    # Reconstruct midpoint path for this generated window
+    mids = norm.mid_path(generated[None, :, :], np.array([mid0]))[0]
+
+    # Inverse transform back to raw LOB values
+    book = norm.inverse(generated, mids)
+
+    ask_prices = book[:, 0::4] / 10000   # convert to dollar prices
+    bid_prices = book[:, 2::4] / 10000
+
+    events = np.arange(1, 65)
+
+    plt.figure(figsize=(10, 5))
+
+    # Plot all 10 ask and 10 bid price levels
+    for level in range(10):
+        plt.plot(events, ask_prices[:, level], alpha=0.7, label=f"Ask L{level+1}" if level == 0 else "")
+        plt.plot(events, bid_prices[:, level], alpha=0.7, label=f"Bid L{level+1}" if level == 0 else "")
+
+    plt.xlabel("Event Number")
+    plt.ylabel("Price ($)")
+    plt.title("TimeGAN Generated Bid and Ask Price Levels")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "example_prices.png"), dpi=150)
     plt.close()
 
 def main():
@@ -158,7 +182,13 @@ def main():
         visualise_reconstructions(model, val_loader, norm, device, output_dir)
 
     visualise_samples(model, val_set, norm, device, output_dir, model_type)
-    plot_example_output(model, norm, device, output_dir)
+
+    with torch.no_grad():
+        z = torch.randn(1, 64, model.noise_dim, device=device)
+        generated = model.generate(z)[0].cpu().numpy()
+
+    plot_example_output(generated, norm, device, output_dir)
+    plot_example_prices(generated, norm, val_set, device, output_dir)
 
 
 if __name__ == "__main__":
