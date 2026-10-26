@@ -183,12 +183,40 @@ def main():
 
     visualise_samples(model, val_set, norm, device, output_dir, model_type)
 
-    with torch.no_grad():
-        z = torch.randn(1, 64, model.noise_dim, device=device)
-        generated = model.generate(z)[0].cpu().numpy()
+    if model_type == "timegan":
+        with torch.no_grad():
+            z = torch.randn(1, 64, model.noise_dim, device=device)
+            generated = model.generate(z)[0].cpu().numpy()
 
-    plot_example_output(generated, norm, device, output_dir)
-    plot_example_prices(generated, norm, val_set, device, output_dir)
+        mid0 = val_set[0][1][0].item()
+
+        # Reconstruct synthetic midpoint prices
+        mids = norm.mid_path(
+            generated[None, :, :],
+            np.array([mid0])
+        )[0]
+
+        # Inverse preprocessing
+        book = norm.inverse(generated, mids)
+
+        print("Event | Ask Price | Ask Vol | Bid Price | Bid Vol")
+
+        for i in range(10):
+            ask_price = book[i, 0] / 10000
+            ask_volume = book[i, 1]
+            bid_price = book[i, 2] / 10000
+            bid_volume = book[i, 3]
+
+            print(
+                f"{i + 1:5d} | "
+                f"{ask_price:9.4f} | "
+                f"{ask_volume:7.2f} | "
+                f"{bid_price:9.4f} | "
+                f"{bid_volume:7.2f}"
+            )
+
+        plot_example_output(generated, norm, device, output_dir)
+        plot_example_prices(generated, norm, val_set, device, output_dir)
 
 
 if __name__ == "__main__":
