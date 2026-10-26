@@ -6,6 +6,7 @@ from skimage.metrics import structural_similarity
 import torch
 import os
 import matplotlib.pyplot as plt
+import time
 
 SEED = 42
 torch.manual_seed(SEED)
@@ -204,6 +205,46 @@ def nn_ssim(gen_imgs, real_imgs, data_range):
         for g in gen_imgs
     ]))
 
+## Computational efficiency
+def count_parameters(model):
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total, trainable
+
+def benchmark_generation(model, model_type, device, batch_size=64, repeats=100):
+    model.eval()
+
+    def generate():
+        if model_type == "vae":
+            return model.sample(batch_size)
+        else:
+            z = torch.randn(batch_size, 64, model.noise_dim, device=device)
+            return model.generate(z)
+
+    with torch.inference_mode():
+        # Warm up GPU
+        for _ in range(10):
+            generate()
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        start = time.perf_counter()
+
+        for _ in range(repeats):
+            generate()
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        elapsed = time.perf_counter() - start
+
+    batch_latency = elapsed / repeats
+    throughput = (batch_size * repeats) / elapsed
+
+    return batch_latency, throughput
+
+
 def main():
     model_type = "timegan"  # "vae" or "timegan"
 
@@ -388,6 +429,38 @@ def main():
     print("Generated vs Real SSIM:", mean_ssim(gen_imgs, real_b, data_range))
     print("Generated nearest Real SSIM:", nn_ssim(gen_imgs[:100], real_a, data_range))
 
+    # Computational efficiency
+    total, trainable = count_parameters(model)
+
+    print(f"Total parameters: {total:,}")
+    print(f"Trainable parameters: {trainable:,}")
+
+    if model_type == "timegan":
+        generation_params = sum(
+            p.numel()
+            for module in [model.generator, model.supervisor, model.recovery]
+            for p in module.parameters()
+        )
+    else:
+        generation_params = sum(
+            p.numel() for p in model.decoder.parameters()
+        )
+
+    print(f"Generation parameters: {generation_params:,}")
+
+    # Computational efficiency
+    total, trainable = count_parameters(model)
+    print(f"Total parameters: {total:,}")
+    print(f"Trainable parameters: {trainable:,}")
+
+    for batch_size in [1, 64]:
+        latency, throughput = benchmark_generation(
+            model, model_type, device, batch_size=batch_size
+        )
+
+        print(f"Batch size {batch_size}:")
+        print(f"  Latency: {latency * 1000:.3f} ms")
+        print(f"  Throughput: {throughput:.2f} sequences/s")
 
 if __name__ == "__main__":
     main()
