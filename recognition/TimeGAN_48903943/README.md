@@ -293,7 +293,7 @@ as 'seen' historical observations and the rest as 'unseen' future data that we c
 performance against. The validation set is used for model selection and monitoring training 
 performance, while the test set is a final evaluation of the synthetic samples' financial plausibility.
 
-## Evaluating TimeGAN
+## Evaluating TimeGAN  ver. 1
 To evaluate how well the TimeGAN performed, i.e. how realistic its generated sequences were, we 
 use quantitative metrics derived from the acceptance criteria specified in the 
 feasibility review. Then, we can compare TimeGAN's metrics to the baseline model's (TimeVAE) to 
@@ -437,6 +437,74 @@ relatedness of sequential events.
 ![TimeVAE Autocorrelation](ac_vae.png)
 
 Figure X: TimeVAE vs Real Autocorrelation
+
+### Heavy-tailed Return Distributions
+In real market conditions, stock prices are frequently volatile and the mid-price distribution 
+often does not reflect a normal distribution. With extreme outlier stock prices occurring more 
+frequently (market crashes/surges), our model needs to be able to reproduce this behaviour.
+Excess kurtosis is a metric that measures the shape of a distribution. A normal distribution has 
+an excess kurtosis of 0, 
+a positive value means the distribution has heavier tails and a spikier centre compared 
+to the normal distribution, and a negative value means lighter tails with a flatter centre. 
+Naturally, we expect stock data to have a positive excess kurtosis since outliers occur more 
+frequently which correspond to heavy tails.
+
+This is confirmed as the real data has an excess kurtosis of 57.6905 which is considered 
+extremely high suggesting the provided AMAZON data is extremely volatile. Both models produced a 
+positive excess kurtosis (TimeGAN - 2.1267, TimeVAE - 2.0943), but neither fully captured the 
+extremity of the real data's distribution.
+
+| Statistic        | Real    | TimeGAN | TimeVAE |
+|------------------|---------|---------|---------|
+| Excess Kurtosis  | 57.6905 | 2.1267  | 2.0943  |
+
+This metric comes with a major caveat as in the real data a majority of the time mid-price does 
+not change resulting in many zero return values, and when changes do occur, they are comparatively 
+extreme to the typical zero or near-zero returns. This may explain the excess kurtosis of 57.6905.
+
+### Structural Similarity - SSIM
+Structural Similarity Index Measure (SSIM) is a measure of how similar two images are based on 
+pixel brightness, contrast and contrast. To perform SSIM on LOB data, we create and compare order 
+volume heatmaps over a set of events for both the real data and synthetic data from the models. 
+SSIM score ranges from -1 to 1 where 1 is an identical copy.
+
+![GAN Heatmap](gan_heatmap.png)
+
+Figure X: Generated TimeGAN Order Volume Heatmaps vs Real Order Volume Heatmaps
+
+ 
+The table below shows the average SSIM score after comparing 300 one-to-one pairs of heatmaps. 
+For example, TimeGAN vs Real means 300 TimeGAN heatmaps were paired up with 300 real data 
+heatmaps where each pair was compared and a SSIM score was produced. The average of these 300 
+scores resulted in 0.0830 which is considered very low.
+
+| Comparison           | SSIM   |
+|----------------------|--------|
+| Real vs Real         | 0.1150 |
+| TimeGAN vs Real      | 0.0830 |
+| TimeVAE vs Real      | 0.1104 |
+
+SSIM is not a very useful metric for limit order books 
+since two completely different snapshots of the market at different times can both be valid.
+The Real vs Real metric demonstrates this perfectly as 300 real heatmaps compared to 300 other 
+real heatmaps only produced an average SSIM score of 0.1150.
+This is far from the target of 0.6 even though all comparisons were between two real and valid 
+order book snapshots.
+
+Neither model performed well here and combined with SSIM's limitations, this metric will not be 
+considered in evaluation.
+
+### Computational Efficiency
+The baseline model exhibited both a lower training time and peak GPU memory usage and is thus 
+the more computationally efficient model under the current training configuration.
+
+| Metric              | TimeGAN       | TimeVAE     |
+|---------------------|---------------|-------------|
+| Training Time       | 20 min 20 sec | 5 min 7 sec |
+| Peak GPU VRAM Usage | 830 MB        | 618 MB      |
+
+
+### Final Comparison
 
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
