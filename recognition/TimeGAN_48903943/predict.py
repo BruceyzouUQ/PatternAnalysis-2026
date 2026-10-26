@@ -84,6 +84,41 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
     plt.savefig(os.path.join(output_dir, "real_vs_timegan.png"))
     plt.close()
 
+def plot_example_output(model, norm, device, output_dir):
+    model.eval()
+
+    with torch.no_grad():
+        z = torch.randn(1, 64, model.noise_dim, device=device)
+        generated = model.generate(z)[0].cpu().numpy()
+
+    # Volumes are independent of the absolute midpoint,
+    # so an arbitrary midpoint is sufficient for this heatmap.
+    dummy_mid = np.full(64, 1e6)
+
+    heatmap = to_depth_heatmap(generated, dummy_mid, norm)
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(heatmap, aspect="auto", origin="upper", cmap="viridis")
+
+    plt.xlabel("Event Number")
+    plt.ylabel("Order Book Level")
+    plt.title("TimeGAN Generated LOB Sequence (64 Events)")
+
+    plt.xticks(np.arange(0, 64, 8), np.arange(1, 65, 8))
+    plt.yticks(
+        np.arange(20),
+        [f"Ask {i}" for i in range(10, 0, -1)]
+        + [f"Bid {i}" for i in range(1, 11)]
+    )
+
+    plt.colorbar(label="log(1 + Order Volume)")
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(output_dir, "example_output.png"),
+        dpi=150
+    )
+    plt.close()
+
 def main():
     model_type = "timegan"
 
@@ -123,6 +158,7 @@ def main():
         visualise_reconstructions(model, val_loader, norm, device, output_dir)
 
     visualise_samples(model, val_set, norm, device, output_dir, model_type)
+    plot_example_output(model, norm, device, output_dir)
 
 
 if __name__ == "__main__":
