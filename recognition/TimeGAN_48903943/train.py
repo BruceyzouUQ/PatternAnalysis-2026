@@ -201,11 +201,12 @@ def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
             + gamma * loss_adv_raw
             + 100 * torch.sqrt(loss_s + 1e-8)
             + 100 * loss_m
-            + 10 * price_gap_penalty(x_fake, gap_mean, gap_scale)
+            + 100 * price_gap_penalty(x_fake, gap_mean, gap_scale)
     )
 
     if torch.rand(()) < 0.001:
-        print(f"Weighted gap penalty: {(10 * price_gap_penalty(x_fake, gap_mean, gap_scale)).item():.6f}")
+        print(f"Weighted gap penalty: "
+              f"{(100 * price_gap_penalty(x_fake, gap_mean, gap_scale)).item():.6f}")
         print(f"Moment contribution: {(100 * loss_m).item():.6f}")
 
     return loss_g
