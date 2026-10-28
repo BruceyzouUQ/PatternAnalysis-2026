@@ -131,7 +131,17 @@ def pretrain_supervisor(model, loader, device, optimizer=None):
 
     return total_loss / len(loader)
 
-def generator_loss(model, x, z, gamma=1.0):
+# -------------------------------- TimeGAN ver 2 improvement --------------------------------------
+def price_gap_penalty(x_fake, gap_mean, gap_scale):
+    # Convert standardised generated gaps back to log values
+    log_gaps = x_fake[:, :, :18] * gap_scale + gap_mean
+
+    # Penalise gaps below one tick (log-gap < 0)
+    return torch.relu(-log_gaps).mean()
+
+# -------------------------------------------------------------------------------------------------
+
+def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
     with torch.no_grad():
         h = model.embedder(x)
 
@@ -168,6 +178,7 @@ def generator_loss(model, x, z, gamma=1.0):
             + gamma * loss_adv_raw
             + 100 * torch.sqrt(loss_s + 1e-8)
             + 100 * loss_m
+            + 10 * price_gap_penalty(x_fake, gap_mean, gap_scale)
     )
 
     return loss_g
@@ -195,7 +206,8 @@ def discriminator_loss(model, x, z, gamma=1.0):
 def joint_train_epoch(model, loader, device,
                       generator_optimizer,
                       embedder_optimizer,
-                      discriminator_optimizer):
+                      discriminator_optimizer,
+                      gap_mean, gap_scale):
     model.train()
 
     total_g_loss = 0
@@ -214,7 +226,7 @@ def joint_train_epoch(model, loader, device,
             model.supervisor.requires_grad_(True)
 
             generator_optimizer.zero_grad()
-            loss_g = generator_loss(model, x, z)
+            loss_g = generator_loss(model, x, z, gap_mean, gap_scale)
             loss_g.backward()
             generator_optimizer.step()
 
@@ -304,7 +316,7 @@ def timegan():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TimeGAN().to(device)
-    checkpoint_dir = os.path.expanduser("~/TimeGANoutputs")
+    checkpoint_dir = os.path.expanduser("~/TimeGAN_gap_penalty")
     os.makedirs(checkpoint_dir, exist_ok=True)
     norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))
 
@@ -351,6 +363,18 @@ def timegan():
         lr=1e-4
     )
 
+    gap_mean = torch.tensor(
+        norm.p_scaler.mean_,
+        dtype=torch.float32,
+        device=device
+    )
+
+    gap_scale = torch.tensor(
+        norm.p_scaler.scale_,
+        dtype=torch.float32,
+        device=device
+    )
+
     best_val_loss = float("inf")
 
     for epoch in range(joint_epochs):
@@ -360,7 +384,8 @@ def timegan():
             device,
             generator_optimizer,
             embedder_optimizer,
-            discriminator_optimizer
+            discriminator_optimizer,
+            gap_mean, gap_scale
         )
 
         val_loss = validate_timegan(model, val_loader, device)

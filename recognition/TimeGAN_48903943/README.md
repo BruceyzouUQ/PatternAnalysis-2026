@@ -537,6 +537,28 @@ data and baseline model meaning it is not capturing realistic market volatility.
 models really struggled with learning the heavy-tailed mid-price returns distribution of the real 
 data making this metric a key area to improve.
 
+### Proposal for Improvement
+The clearest weakness in TimeGAN ver. 1 with the most actionable improvement is reducing the 
+number of ask/bid ladder violations. The baseline model greatly outperformed TimeGAN in this 
+department and financial validity is the metric that objectively tells us if our model reproduced 
+a valid limit order book.
+
+The improvement will consist of introducing a penalty in the generator's loss function that 
+specifically targets price gaps below 1 tick.
+
+```
+def price_gap_penalty(x_fake, gap_mean, gap_scale):
+    # Convert standardised generated gaps back to log values
+    log_gaps = x_fake[:, :, :18] * gap_scale + gap_mean
+
+    # Penalise gaps below one tick (log-gap < 0)
+    return torch.relu(-log_gaps).mean()
+```
+TimeGAN does not generate price gaps directly, instead it generates standardised log price gaps. 
+We first have to undo the standardisation before checking valid price gaps resulting in just log 
+price gaps. We want to penalise price gaps less than 1 therefore, we penalise log price gaps 
+less than 0 since log(1) = 0. Then using a ReLu, we can increase the penalty based on how major the 
+violation was. Taking the mean then produces one penalty value for the whole 64-event window.
 
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
