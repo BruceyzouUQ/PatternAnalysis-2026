@@ -505,6 +505,38 @@ the more computationally efficient model under the current training configuratio
 
 
 ### Final Comparison
+Now, summarising which model performed better in which aspect, we produce the table below:
+
+| Evaluation Metric                  | Stronger Model         |
+|------------------------------------|------------------------|
+| Financial Validity                 | TimeVAE overall        |
+| KL Divergence on Spread            | TimeGAN                |
+| KL Divergence on Mid-price Returns | TimeVAE                |
+| VWAP Statistics                    | TimeVAE                |
+| Autocorrelation                    | TimeGAN                |
+| Heavy-tail Modelling               | Neither satisfactorily |
+| SSIM                               | Not considered         |
+| Computational Efficiency           | TimeVAE                |
+
+The baseline model outperformed the TimeGAN on most evaluation metrics except for KL on spread 
+and autocorrelation. Additionally, neither model performed well at reproducing the real data's 
+heavy-tailed distribution on mid-price returns.
+
+Currently, the TimeGAN does not demonstrate a substantial improvement over the baseline 
+model under the current evaluation metrics. Modifications will be made to the model in an 
+attempt to improve its performance. 
+
+## Evaluating TimeGAN ver. 2
+
+### Version 1 Failure Cases
+TimeGAN ver. 1 struggled particularly at producing consistent valid ask and bid ladders. 82.92% 
+of generated events had at least one violation of the strictly increasing ask ladder constraint,  
+and 79.98% of events had at least one violation of the strictly decreasing bid ladder constraint.
+It also consistently produced higher VWAP offset mean and variance values compared to the real 
+data and baseline model meaning it is not capturing realistic market volatility. Finally, both 
+models really struggled with learning the heavy-tailed mid-price returns distribution of the real 
+data making this metric a key area to improve.
+
 
 ## References
 https://proceedings.neurips.cc/paper_files/paper/2019/file/c9efe5f26cd17ba6216bbe2a7d26d490-Paper.pdf
