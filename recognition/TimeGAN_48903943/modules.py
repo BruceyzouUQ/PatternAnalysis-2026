@@ -8,7 +8,7 @@ class Encoder(nn.Module):
         super().__init__()
         # 5 conv blocks, each stride=2, doubling channels roughly:
         # each block: Conv1d + BatchNorm1d + activation
-        # input: (B, 40, 64) -> output: (B, 512, 2)
+        # input: (B, 40, 64) -> output: (B, 512, 2) in format (Batch size, # features, # timesteps)
         self.conv_layers = nn.Sequential(
             nn.Conv1d(in_channels=40, out_channels=64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm1d(64),
@@ -38,10 +38,6 @@ class Encoder(nn.Module):
         logvar = self.fc_logvar(x)
         return mu, logvar
 
-# x = torch.randn(8, 64, 40)
-# mu, logvar = Encoder()(x.permute(0, 2, 1))
-# print(mu.shape, logvar.shape)   # expect torch.Size([8, 128]) each
-
 class Decoder(nn.Module):
     def __init__(self, latent_dim=128):
         super().__init__()
@@ -51,19 +47,24 @@ class Decoder(nn.Module):
         # mirror of encoder: 5 ConvTranspose1d blocks
         # (B, 512, 2) -> (B, 40, 64)
         self.deconv_layers = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=512, out_channels=512, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose1d(in_channels=512, out_channels=512, kernel_size=3, stride=2,
+                                padding=1, output_padding=1),
             nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=512, out_channels=256, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose1d(in_channels=512, out_channels=256, kernel_size=3, stride=2,
+                               padding=1, output_padding=1),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose1d(in_channels=256, out_channels=128, kernel_size=3, stride=2,
+                                padding=1, output_padding=1),
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose1d(in_channels=128, out_channels=64, kernel_size=3, stride=2,
+                                padding=1, output_padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=64, out_channels=40, kernel_size=3, stride=2, padding=1, output_padding=1)
+            nn.ConvTranspose1d(in_channels=64, out_channels=40, kernel_size=3, stride=2,
+                                padding=1, output_padding=1)
         )
 
     def forward(self, z):
@@ -71,15 +72,6 @@ class Decoder(nn.Module):
         x = x.view(-1, 512, 2)  # unflatten
         x = self.deconv_layers(x)
         return x
-
-# z = torch.randn(8, 128)
-# out = Decoder()(z)
-# print(out.shape)   # want (8, 40, 64)
-
-# Test encoder + decoder
-# x = torch.randn(8, 64, 40).permute(0, 2, 1)
-# mu, logvar = Encoder()(x)
-# print(Decoder()(mu).shape == x.shape)
 
 
 class TimeVAE(nn.Module):
@@ -90,6 +82,8 @@ class TimeVAE(nn.Module):
         self.latent_dim = latent_dim
 
     def reparameterize(self, mu, logvar):
+        # reparamaterisation allows us to sample from a distribution while maintaining
+        # differentiability
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + std * eps
@@ -105,7 +99,7 @@ class TimeVAE(nn.Module):
         z = torch.randn(n, self.latent_dim, device=next(self.parameters()).device)
         return self.decoder(z).permute(0, 2, 1)
 
-
+# Loss function combines reconstruction loss and KL loss
 def vae_loss(x_hat, x, mu, logvar, beta=1.0):
     b = x.size(0)
     recon_loss = F.mse_loss(x_hat, x, reduction='sum') / b
@@ -115,10 +109,13 @@ def vae_loss(x_hat, x, mu, logvar, beta=1.0):
 
 # ---------------------------------TIMEGAN--------------------------------
 
+# Embeds real LOB events into latent representations
 class Embedder(nn.Module):
     def __init__(self, feature_dim=40, latent_dim=128, num_layers=2):
         super().__init__()
 
+        # GRU learns temporal relationships between consecutive events
+        # Input: (B, 64, 40) -> Output: (B, 64, 128)
         self.gru = nn.GRU(
             feature_dim,
             latent_dim,
@@ -126,17 +123,20 @@ class Embedder(nn.Module):
             batch_first=True
         )
 
+        # learnable projection of GRU hidden states into latent space
         self.projection = nn.Linear(latent_dim, latent_dim)
 
     def forward(self, x):
-        h, _ = self.gru(x)
+        h, _ = self.gru(x) # extract hidden states for every timestep
         return self.projection(h)
 
-
+# Recovers LOB events from their latent representations
 class Recovery(nn.Module):
     def __init__(self, feature_dim=40, latent_dim=128, num_layers=2):
         super().__init__()
 
+        # GRU learns to decode temporal dependencies in latent sequences
+        # Input: (B, 64, 128) -> Output: (B, 64, 128)
         self.gru = nn.GRU(
             latent_dim,
             latent_dim,
@@ -144,39 +144,20 @@ class Recovery(nn.Module):
             batch_first=True
         )
 
+        # projects latent representations back to the original LOB feature space
         self.projection = nn.Linear(latent_dim, feature_dim)
 
     def forward(self, x):
         h, _ = self.gru(x)
         return self.projection(h)
 
-# embedder = Embedder()
-# recovery = Recovery()
-#
-# optimizer = torch.optim.Adam(
-#     list(embedder.parameters()) + list(recovery.parameters()),
-#     lr=1e-3
-# )
-#
-# x = torch.randn(8, 64, 40)
-#
-# optimizer.zero_grad()
-#
-# h = embedder(x)
-# x_hat = recovery(h)
-#
-# loss = nn.functional.mse_loss(x_hat, x)
-#
-# loss.backward()
-# optimizer.step()
-#
-# print(loss.item())
-
-
+# Learns to predict the next latent state from previous states
 class Supervisor(nn.Module):
     def __init__(self, latent_dim=128, num_layers=2):
         super().__init__()
 
+        # GRU models temporal transitions between consecutive latent states
+        # Input: (B, 64, 128) -> Output: (B, 64, 128)
         self.gru = nn.GRU(
             latent_dim,
             latent_dim,
@@ -184,27 +165,20 @@ class Supervisor(nn.Module):
             batch_first=True
         )
 
+        # projects GRU hidden states to predicted latent states
         self.projection = nn.Linear(latent_dim, latent_dim)
 
     def forward(self, x):
         out, _ = self.gru(x)
         return self.projection(out)
 
-# x = torch.randn(8, 64, 40)
-#
-# embedder = Embedder()
-# supervisor = Supervisor()
-#
-# h = embedder(x)
-# h_hat = supervisor(h)
-#
-# print(h.shape)      # (8, 64, 128)
-# print(h_hat.shape)  # (8, 64, 128)
-
+# Generates synthetic latent sequences from random noise
 class Generator(nn.Module):
     def __init__(self, noise_dim=40, latent_dim=128, num_layers=2):
         super().__init__()
 
+        # GRU transforms random noise into time-dependent hidden states
+        # Input: (B, 64, 40) -> Output: (B, 64, 128)
         self.gru = nn.GRU(
             noise_dim,
             latent_dim,
@@ -212,30 +186,20 @@ class Generator(nn.Module):
             batch_first=True
         )
 
+        # projects GRU hidden states into the learned latent space
         self.projection = nn.Linear(latent_dim, latent_dim)
 
     def forward(self, z):
         h, _ = self.gru(z)
         return self.projection(h)
 
-# z = torch.randn(8, 64, 40)
-#
-# generator = Generator()
-# supervisor = Supervisor()
-# recovery = Recovery()
-#
-# h = generator(z)
-# h_hat = supervisor(h)
-# x_hat = recovery(h_hat)
-#
-# print(h.shape)
-# print(h_hat.shape)
-# print(x_hat.shape)
-
+# Distinguises between real embedded sequences and fake synthetic latent sequences
 class Discriminator(nn.Module):
     def __init__(self, latent_dim=128, num_layers=2):
         super().__init__()
 
+        # GRU analyses temporal patterns in latent sequences
+        # Input: (B, 64, 128) -> Output: (B, 64, 128)
         self.gru = nn.GRU(
             latent_dim,
             latent_dim,
@@ -243,25 +207,13 @@ class Discriminator(nn.Module):
             batch_first=True
         )
 
+        # produces a real/fake logit for each timestep
         self.projection = nn.Linear(latent_dim, 1)
 
     def forward(self, h):
         out, _ = self.gru(h)
         return self.projection(out)
 
-# z = torch.randn(8, 64, 40)
-#
-# generator = Generator()
-# supervisor = Supervisor()
-# discriminator = Discriminator()
-#
-# h = generator(z)
-# h_hat = supervisor(h)
-# scores = discriminator(h_hat)
-#
-# print(h.shape)       # (8, 64, 128)
-# print(h_hat.shape)   # (8, 64, 128)
-# print(scores.shape)  # (8, 64, 1)
 
 class TimeGAN(nn.Module):
     def __init__(self, feature_dim=40, latent_dim=128, noise_dim=40, num_layers=2):
