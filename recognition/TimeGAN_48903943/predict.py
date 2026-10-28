@@ -7,24 +7,34 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
+# Convert normalised LOB sequences into depth heatmaps
 def to_depth_heatmap(Z, mid, norm, use_log=True):
     real = norm.inverse(Z, mid)
+
+    # extract ask/bid volumes across all 10 levels
     ask_v = real[:, 1::4]
     bid_v = real[:, 3::4]
     img = np.vstack((ask_v.T[::-1], bid_v.T))
     return np.log1p(img) if use_log else img
 
+# Compare original and reconstructed LOB sequences from the TimeVAE
 def visualise_reconstructions(model, val_loader, norm, device, output_dir, n=8):
-    x, mid = next(iter(val_loader))
+    x, mid = next(iter(val_loader)) # get a batch of real validation windows
+
+    # Reconstruct LOB sequences
     with torch.no_grad():
         x_hat, mu, logvar = model(x.to(device))
     x, x_hat = x.numpy(), x_hat.cpu().numpy()
     mid = mid.numpy()
 
+    # Display original sequences above their reconstructed counterparts
     fig, axes = plt.subplots(2, n, figsize=(2 * n, 4))
+
     for i in range(n):
+        # Convert original and reconstructed sequences into depth heatmaps
         orig = to_depth_heatmap(x[i], mid[i], norm)
         recon = to_depth_heatmap(x_hat[i], mid[i], norm)
+
         vmax = max(orig.max(), recon.max())      # shared colour scale per pair
         axes[0, i].imshow(orig, aspect="auto", vmin=0, vmax=vmax)
         axes[1, i].imshow(recon, aspect="auto", vmin=0, vmax=vmax)
@@ -32,11 +42,14 @@ def visualise_reconstructions(model, val_loader, norm, device, output_dir, n=8):
         axes[1, i].axis("off")
     axes[0, 0].set_title("Original", loc="left")
     axes[1, 0].set_title("Reconstructed", loc="left")
+
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "reconstructions.png"))
     plt.close()
 
+# Compare real validation sequences against independently generated LOB samples
 def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8):
+    # generate synthetic samples
     with torch.no_grad():
         if model_type == "vae":
             samples = model.sample(n)
@@ -44,20 +57,23 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
             z = torch.randn(n, 64, model.noise_dim, device=device)
             samples = model.generate(z)
 
-    samples = samples.cpu().numpy()
+    samples = samples.cpu().numpy() # Use reference midpoint prices for inverse normalisation
 
     mid = val_set[0][1].numpy()
 
+    # Convert synthetic sequences into depth heatmaps
     imgs = [
         to_depth_heatmap(samples[i], mid, norm)
         for i in range(n)
     ]
 
+    # Retrieve real validation sequences for comparison
     real_samples = [
         val_set[i][0].numpy()
         for i in range(n)
     ]
 
+    # Convert real validation sequences into depth heatmaps
     real_imgs = [
         to_depth_heatmap(real_samples[i], mid, norm)
         for i in range(n)
@@ -68,6 +84,7 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
         max(img.max() for img in imgs)
     )
 
+    # Display real sequences in the first row and generated sequences below
     fig, axes = plt.subplots(2, n, figsize=(2 * n, 5))
 
     for i in range(n):
@@ -84,11 +101,13 @@ def visualise_samples(model, val_set, norm, device, output_dir, model_type, n=8)
     plt.savefig(os.path.join(output_dir, "real_vs_timegan.png"))
     plt.close()
 
+# Visualise a generated LOB sequence as an order book depth heatmap
 def plot_example_output(generated, norm, device, output_dir):
     # Volumes are independent of the absolute midpoint,
     # so an arbitrary midpoint is sufficient for this heatmap.
     dummy_mid = np.full(64, 1e6)
 
+    # Convert generated LOB features into a 20-level volume heatmap
     heatmap = to_depth_heatmap(generated, dummy_mid, norm)
 
     plt.figure(figsize=(10, 5))
@@ -113,6 +132,7 @@ def plot_example_output(generated, norm, device, output_dir):
     )
     plt.close()
 
+# Visualise the change in generated ask/bid prices over 64 events
 def plot_example_prices(generated, norm, val_set, device, output_dir):
     # Use a real starting midpoint so absolute prices can be reconstructed
     mid0 = val_set[0][1][0].item()
@@ -123,6 +143,7 @@ def plot_example_prices(generated, norm, val_set, device, output_dir):
     # Inverse transform back to raw LOB values
     book = norm.inverse(generated, mids)
 
+    # Extract all 10 ask/bid price levels
     ask_prices = book[:, 0::4] / 10000   # convert to dollar prices
     bid_prices = book[:, 2::4] / 10000
 
@@ -199,6 +220,7 @@ def main():
         # Inverse preprocessing
         book = norm.inverse(generated, mids)
 
+        # print out example synthetic outputs
         print("Event | Ask Price | Ask Vol | Bid Price | Bid Vol")
 
         for i in range(10):
