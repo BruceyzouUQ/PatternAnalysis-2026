@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from dataset import get_datasets
 from modules import TimeVAE, vae_loss, TimeGAN
 
-
+# a single epoch for TimeVAE
 def run_epoch(model, loader, device, beta, optimizer=None):
     """One pass over loader; returns per-window mean [total, recon, kl]."""
     training = optimizer is not None
@@ -18,7 +18,7 @@ def run_epoch(model, loader, device, beta, optimizer=None):
         for x, _ in loader:
             x = x.to(device)
             x_hat, mu, logvar = model(x)
-            loss, recon, kl = vae_loss(x_hat, x, mu, logvar, beta)
+            loss, recon, kl = vae_loss(x_hat, x, mu, logvar, beta) # loss function
             if training:
                 optimizer.zero_grad()
                 loss.backward()
@@ -39,6 +39,7 @@ def vae():
     DATA_PATH = os.path.expanduser("~/lobster/data/order_sample.csv")
     train_set, val_set, test_set, norm = get_datasets(DATA_PATH)
 
+    # load 64 windows at a time
     train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=64)
     test_loader = DataLoader(test_set, batch_size=64)
@@ -48,15 +49,21 @@ def vae():
     optimizer = Adam(model.parameters(), lr=lr)
     checkpoint_dir = os.path.expanduser("~/baselineOutputs")
     os.makedirs(checkpoint_dir, exist_ok=True)
-    norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))        # fitted on train only; predict.py reloads it
+
+    # fitted on train only; predict.py reloads it
+    norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))
 
     history = {"train": [], "val": []}
     best_val = float("inf")
+
+    # training loop
     for epoch in range(num_epochs):
         tr = run_epoch(model, train_loader, device, beta, optimizer)
         va = run_epoch(model, val_loader, device, beta)
         history["train"].append(tr)
         history["val"].append(va)
+
+        # save best validation result
         if va[0] < best_val:
             best_val = va[0]
             torch.save(model.state_dict(), os.path.join(checkpoint_dir, "timevae_best.pt"))
@@ -64,7 +71,8 @@ def vae():
               f"(recon {tr[1]:.1f}, kl {tr[2]:.1f}) | val {va[0]:.1f} "
               f"(recon {va[1]:.1f}, kl {va[2]:.1f})")
 
-    model.load_state_dict(torch.load(os.path.join(checkpoint_dir, "timevae_best.pt"), map_location=device))
+    model.load_state_dict(torch.load(os.path.join(checkpoint_dir, "timevae_best.pt"),
+                                     map_location=device))
     te = run_epoch(model, test_loader, device, beta)
     print(f"Test (best-val checkpoint): total {te[0]:.1f}, recon {te[1]:.1f}, kl {te[2]:.1f}")
 
@@ -80,6 +88,8 @@ def vae():
 
 #------------------------------TimeGAN--------------------------------------
 
+# train embedder and recovery network to transform from real LOB events into latent
+# representations and back
 def pretrain_embedder(model, loader, device, optimizer=None):
     training = optimizer is not None
     model.train() if training else model.eval()
@@ -90,7 +100,10 @@ def pretrain_embedder(model, loader, device, optimizer=None):
         x = x.to(device)
 
         with torch.set_grad_enabled(training):
+            # encode real LOB events into latent space and reconstruct them
             x_hat = model(x)
+
+            # reconstruction loss measures difference between real and recovered events
             loss = torch.nn.functional.mse_loss(x_hat, x)
 
             if training:
@@ -102,6 +115,7 @@ def pretrain_embedder(model, loader, device, optimizer=None):
 
     return total_loss / len(loader)
 
+# Train supervisor to predict next-event latent representations
 def pretrain_supervisor(model, loader, device, optimizer=None):
     training = optimizer is not None
     model.train() if training else model.eval()
@@ -111,16 +125,16 @@ def pretrain_supervisor(model, loader, device, optimizer=None):
     for x, _ in loader:
         x = x.to(device)
 
+        # extract real latent representations without updating the Embedder
         with torch.no_grad():
             h = model.embedder(x)
 
         with torch.set_grad_enabled(training):
+            # predict latent states using the Supervisor
             h_hat = model.supervisor(h)
 
-            loss = torch.nn.functional.mse_loss(
-                h_hat[:, :-1, :],
-                h[:, 1:, :]
-            )
+            # measure difference between predicted state vs actual next state
+            loss = torch.nn.functional.mse_loss(h_hat[:, :-1, :], h[:, 1:, :])
 
             if training:
                 optimizer.zero_grad()
@@ -132,6 +146,7 @@ def pretrain_supervisor(model, loader, device, optimizer=None):
     return total_loss / len(loader)
 
 # -------------------------------- TimeGAN ver 2 improvement --------------------------------------
+# Penalise price gaps < 1 tick
 def price_gap_penalty(x_fake, gap_mean, gap_scale):
     # Convert standardised generated gaps back to log values
     log_gaps = x_fake[:, :, :18] * gap_scale + gap_mean
@@ -141,38 +156,46 @@ def price_gap_penalty(x_fake, gap_mean, gap_scale):
 
 # -------------------------------------------------------------------------------------------------
 
+# Calculate Generator loss to encourage realistic synthetic LOB sequences
 def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
+    # Encode real sequences without updating the Embedder
     with torch.no_grad():
         h = model.embedder(x)
 
+    # Generate synthetic latent sequences and recover synthetic LOB events
     h_fake_raw = model.generator(z)
     h_fake = model.supervisor(h_fake_raw)
     x_fake = model.recovery(h_fake)
 
+    # Discriminator evaluates both supervised and raw generated latent sequences
     fake_logits = model.discriminator(h_fake)
     fake_raw_logits = model.discriminator(h_fake_raw)
 
     criterion = torch.nn.BCEWithLogitsLoss()
 
+    # Adversarial losses encourage generated sequences to be classified as real
     loss_adv = criterion(fake_logits, torch.ones_like(fake_logits))
     loss_adv_raw = criterion(fake_raw_logits, torch.ones_like(fake_raw_logits))
 
+    # Supervised loss encourages accurate next-timestep latent predictions
     loss_s = torch.nn.functional.mse_loss(
-        model.supervisor(h)[:, :-1, :],
-        h[:, 1:, :]
-    )
+        model.supervisor(h)[:, :-1, :], h[:, 1:, :])
 
+    # Calculate feature-wise statistics across batches and timesteps
     real_mean = x.mean(dim=(0, 1))
     fake_mean = x_fake.mean(dim=(0, 1))
 
     real_std = x.std(dim=(0, 1), unbiased=False)
     fake_std = x_fake.std(dim=(0, 1), unbiased=False)
 
+    # Moment matching encourages similar means and standard deviations
+    # between real and generated LOB features
     loss_m = (
             torch.mean(torch.abs(real_mean - fake_mean))
             + torch.mean(torch.abs(real_std - fake_std))
     )
 
+    # Combine adversarial, supervised, moment matching and price gap losses
     loss_g = (
             loss_adv
             + gamma * loss_adv_raw
@@ -183,26 +206,33 @@ def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
 
     return loss_g
 
+# Calculate Discriminator loss to distinguish real and synthetic latent sequences
 def discriminator_loss(model, x, z, gamma=1.0):
+
+    # Prepare real and generated latent sequences without updating their networks
     with torch.no_grad():
         h = model.embedder(x)
         h_fake_raw = model.generator(z)
         h_fake = model.supervisor(h_fake_raw)
 
+    # Classify real latent sequences and both types of generated sequences
     real_logits = model.discriminator(h)
     fake_logits = model.discriminator(h_fake)
     fake_raw_logits = model.discriminator(h_fake_raw)
 
     criterion = torch.nn.BCEWithLogitsLoss()
 
+    # Real sequences are labelled 1, generated sequences are labelled 0
     loss_real = criterion(real_logits, torch.ones_like(real_logits))
     loss_fake = criterion(fake_logits, torch.zeros_like(fake_logits))
     loss_fake_raw = criterion(fake_raw_logits, torch.zeros_like(fake_raw_logits))
 
+    # Combined binary classification loss
     loss_d = loss_real + loss_fake + gamma * loss_fake_raw
 
     return loss_d
 
+# Join adversarial training using alternating Generator, Embedder and Discriminator updates
 def joint_train_epoch(model, loader, device,
                       generator_optimizer,
                       embedder_optimizer,
@@ -217,6 +247,8 @@ def joint_train_epoch(model, loader, device,
     for x, _ in loader:
         x = x.to(device)
 
+        # Update Generator/Supervisor and Embedder/Recovery twice per batch
+        # for every Discriminator update
         for _ in range(2):
             z = torch.randn(x.size(0), x.size(1), model.noise_dim, device=device)
 
@@ -242,9 +274,7 @@ def joint_train_epoch(model, loader, device,
 
             loss_r = torch.nn.functional.mse_loss(x_hat, x)
             loss_s = torch.nn.functional.mse_loss(
-                model.supervisor(h)[:, :-1, :],
-                h[:, 1:, :]
-            )
+                model.supervisor(h)[:, :-1, :], h[:, 1:, :])
 
             loss_e = 10 * torch.sqrt(loss_r + 1e-8) + 0.1 * loss_s
 
@@ -259,18 +289,21 @@ def joint_train_epoch(model, loader, device,
         z = torch.randn(x.size(0), x.size(1), model.noise_dim, device=device)
         discriminator_optimizer.zero_grad()
 
+        # Train Discriminator to distinguish real and synthetic latent sequences
         loss_d = discriminator_loss(model, x, z)
         loss_d.backward()
         discriminator_optimizer.step()
 
         total_d_loss += loss_d.item()
 
+    # Return average losses across all batches and update steps
     return (
         total_g_loss / (2 * len(loader)),
         total_e_loss / (2 * len(loader)),
         total_d_loss / len(loader)
     )
 
+# Validation step
 def validate_timegan(model, loader, device):
     model.eval()
     total_loss = 0
@@ -279,11 +312,13 @@ def validate_timegan(model, loader, device):
         for x, _ in loader:
             x = x.to(device)
 
+            # Generate random noise matching real sequence dimensions
             z = torch.randn(
                 x.size(0), x.size(1), model.noise_dim,
                 device=device
             )
 
+            # Generate synthetic LOB sequences
             x_fake = model.generate(z)
 
             real_mean = x.mean(dim=(0, 1))
@@ -326,6 +361,7 @@ def timegan():
         lr=lr
     )
 
+    # embedder-recovery pretraining
     for epoch in range(embedder_epochs):
         train_loss = pretrain_embedder(model, train_loader, device, embedder_optimizer)
         val_loss = pretrain_embedder(model, val_loader, device)
@@ -338,6 +374,7 @@ def timegan():
         lr=lr
     )
 
+    # supervisor pretraining
     for epoch in range(supervisor_epochs):
         train_loss = pretrain_supervisor(model, train_loader, device, supervisor_optimizer)
         val_loss = pretrain_supervisor(model, val_loader, device)
@@ -377,6 +414,7 @@ def timegan():
 
     best_val_loss = float("inf")
 
+    # joint adversarial training
     for epoch in range(joint_epochs):
         g_loss, e_loss, d_loss = joint_train_epoch(
             model,
