@@ -204,6 +204,10 @@ def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
             + 10 * price_gap_penalty(x_fake, gap_mean, gap_scale)
     )
 
+    if torch.rand(()) < 0.001:
+        print(f"Weighted gap penalty: {(10 * price_gap_penalty(x_fake, gap_mean, gap_scale)).item():.6f}")
+        print(f"Moment contribution: {(100 * loss_m).item():.6f}")
+
     return loss_g
 
 # Calculate Discriminator loss to distinguish real and synthetic latent sequences
