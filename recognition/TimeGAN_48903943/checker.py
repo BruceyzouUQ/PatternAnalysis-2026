@@ -23,8 +23,8 @@ def generate_samples(model, model_type, n, device, batch_size=64):
             if model_type == "vae":
                 x = model.sample(b)
             else:
-                z = torch.randn(b, 64, model.noise_dim, device=device)
-                x = model.generate(z)
+                z = torch.randn(b, 64, model.noise_dim, device=device)  # sample noise
+                x = model.generate(z)                                   # generate from noise
 
             samples.append(x.cpu().numpy())
 
@@ -38,6 +38,7 @@ def rule_violations(Z, norm, eps=1e-6):
     vol = np.expm1(norm.v_scaler.inverse_transform(Z[:, 18:38]))    # shares
     spr = np.exp(norm.s_scaler.inverse_transform(Z[:, 38:39]).ravel())
 
+    # print violation percentages
     return {
         "spread_below_one_tick":    np.mean(spr < 1.0 - eps),
         "locked_or_crossed":        np.mean(spr <= 0),
@@ -48,53 +49,63 @@ def rule_violations(Z, norm, eps=1e-6):
         "neg_volume":               np.mean((vol < -eps).any(axis=1)),
     }
 
-# KL spread and midprice return
+# ------------------------------- KL spread and midprice returns ----------------------------------
+# rRecover ask/bid spread values in ticks from normalised form
 def spread_ticks(Z, norm):
-    Z = np.asarray(Z).reshape(-1, 40)
-    log_spread = norm.s_scaler.inverse_transform(Z[:, 38:39])
-    spread = np.exp(log_spread)
+    Z = np.asarray(Z).reshape(-1, 40) # flatten
+    log_spread = norm.s_scaler.inverse_transform(Z[:, 38:39]) # undo standardise
+    spread = np.exp(log_spread) # undo log
     return spread.ravel()
 
+# Recover original midprice log returns from normalised form
 def midprice_returns(Z, norm):
     Z = np.asarray(Z, dtype=np.float64)
     original_shape = Z.shape[:-1]
+
+    # extract mid-price return feature from column 39 and undo standardise
     returns = norm.r_scaler.inverse_transform(
         Z[..., 39].reshape(-1, 1)
     )
     return returns.reshape(original_shape)
 
+# Calculate KL divergence between real and generated feature distributions
 def kl_hist(real, gen, edges, eps=1e-8):
+    # flatten and clip outliers to the histogram boundaries
     real = np.clip(np.asarray(real).ravel(), edges[0], edges[-1])
     gen = np.clip(np.asarray(gen).ravel(), edges[0], edges[-1])
 
+    # count real and generated samples in each bin
     real_counts, _ = np.histogram(real, bins=edges)
     gen_counts, _ = np.histogram(gen, bins=edges)
 
+    # convert to probabilities
     real_probs = real_counts / real_counts.sum()
     gen_probs = gen_counts / gen_counts.sum()
 
+    # add epsilon to prevent div by 0 and log(0)
     real_probs += eps
     gen_probs += eps
 
     real_probs /= real_probs.sum()
     gen_probs /= gen_probs.sum()
 
+    # compute KL
     kl = np.sum(real_probs * np.log(real_probs/gen_probs))
     return float(kl)
 
-# VWAP
-
-# VWAP
+# -------------------------------------------- VWAP -----------------------------------------------
 def calculate_vwap(X):
+    # extract ask/bid prices/volumes
     ask_prices = X[:, 0::4]
     ask_volumes = X[:, 1::4]
-
     bid_prices = X[:, 2::4]
     bid_volumes = X[:, 3::4]
 
+    # get total volume for asks/bids
     ask_total = ask_volumes.sum(axis=1)
     bid_total = bid_volumes.sum(axis=1)
 
+    # weight each price by corresponding volume and div by total
     ask_vwap = np.divide(
         (ask_prices * ask_volumes).sum(axis=1),
         ask_total,
@@ -111,7 +122,9 @@ def calculate_vwap(X):
 
     return bid_vwap, ask_vwap
 
+# Calculate statistics of VWAP offset from mid-price distribution
 def vwap_stats(bid_vwap, ask_vwap, mid):
+    # offset is difference from mid-price
     bid_offset = (mid - bid_vwap) / 100
     ask_offset = (ask_vwap - mid) / 100
 
@@ -122,8 +135,9 @@ def vwap_stats(bid_vwap, ask_vwap, mid):
         "ask_variance": np.var(ask_offset)
     }
 
-
+# Compare real and generated VWAP offset distributions using histograms
 def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output_dir):
+    # Calculate VWAP offsets from the corresponding midpoint for each side
     if side == "bid":
         real_offsets = (real_mid - real_vwap) / 100
         gen_offsets = (gen_mid - gen_vwap) / 100
@@ -135,6 +149,7 @@ def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output
     combined = np.concatenate([real_offsets, gen_offsets])
     bins = np.histogram_bin_edges(combined, bins=60)
 
+    # plot generated vs real histograms
     plt.figure(figsize=(8, 5))
     plt.hist(real_offsets, bins=bins, density=True, alpha=0.5, label="Real")
     plt.hist(gen_offsets, bins=bins, density=True, alpha=0.5, label="Generated")
@@ -148,37 +163,44 @@ def plot_vwap_distributions(real_vwap, gen_vwap, real_mid, gen_mid, side, output
     plt.savefig(os.path.join(output_dir, f"{side}_vwap_distribution.png"), dpi=150)
     plt.close()
 
-# Temporal Metrics
+# ----------------------------------- Temporal Metrics --------------------------------------------
+# Calculate autocorrelation of absolute midprice returns to measure volatility clustering
 def abs_return_acf(returns, max_lag=20):
-    """
-    ACF of absolute returns at lags 1 to max_lag.
-    Input shape: (n_windows, window_length).
-    """
+    # Convert returns to absolute values to measure magnitude of price movements
+    # Input shape: (n_windows, window_length).
     a = np.abs(np.asarray(returns, dtype=np.float64))
 
+    # Ensure input has a window dimension
     if a.ndim == 1:
         a = a[None, :]
 
     assert max_lag < a.shape[1]
 
-    a = a - a.mean()
-    var = np.mean(a * a)
+    a = a - a.mean() # centre absolute returns around their global mean
+    var = np.mean(a * a) # calculate variance for normalising autocorrelation
 
+    # Calculate autocorrelation at each lag without crossing window boundaries
     return np.array([
         np.mean(a[:, :-k] * a[:, k:]) / var
         for k in range(1, max_lag + 1)
     ])
 
+# Calculate mid-price return distribution statistics to evaluate variability and heavy tails
 def tail_stats(returns, qs=(0.01, 0.05, 0.95, 0.99)):
-    r = np.asarray(returns, dtype=np.float64).ravel()
+    r = np.asarray(returns, dtype=np.float64).ravel() # flatten
+
+    # Calculate standard deviation and excess kurtosis
+    # Higher excess kurtosis generally indicates heavier tails
     out = {"std": r.std(), "excess_kurtosis": kurtosis(r)}   # scipy default = excess
+
+    # Calculate lower and upper return quantiles to examine extreme movements
     for q, v in zip(qs, np.quantile(r, qs)):
         out[f"q{q}"] = v
     return out
 
-# SSIM
+# ----------------------------------------------- SSIM --------------------------------------------
 def heatmap(Z, norm, use_log=True):
-    """One normalised (64, 40) window -> (20, 64) depth heatmap."""
+    # One normalised (64, 40) window -> (20, 64) depth heatmap.
     dummy_mid = np.full(len(Z), 1e6)
     real = norm.inverse(Z, dummy_mid)
 
@@ -190,7 +212,7 @@ def heatmap(Z, norm, use_log=True):
     return np.log1p(img) if use_log else img
 
 def mean_ssim(a_imgs, b_imgs, data_range):
-    """Mean SSIM over index-paired images."""
+    # Mean SSIM over index-paired images
     return float(np.mean([
         structural_similarity(a, b, data_range=data_range)
         for a, b in zip(a_imgs, b_imgs)
@@ -198,22 +220,25 @@ def mean_ssim(a_imgs, b_imgs, data_range):
 
 
 def nn_ssim(gen_imgs, real_imgs, data_range):
-    """For each generated image, find its highest SSIM against real images."""
+    # For each generated image, find its highest SSIM against real images.
     return float(np.mean([
         max(structural_similarity(g, r, data_range=data_range)
             for r in real_imgs)
         for g in gen_imgs
     ]))
 
-## Computational efficiency
+## ----------------------------------- Computational efficiency -----------------------------------
+# Count total and trainable parameters to measure model complexity
 def count_parameters(model):
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return total, trainable
 
+# Benchmark synthetic LOB generation latency and throughput
 def benchmark_generation(model, model_type, device, batch_size=64, repeats=100):
     model.eval()
 
+    # Generate a batch of synthetic LOB sequences using the selected model
     def generate():
         if model_type == "vae":
             return model.sample(batch_size)
@@ -239,8 +264,8 @@ def benchmark_generation(model, model_type, device, batch_size=64, repeats=100):
 
         elapsed = time.perf_counter() - start
 
-    batch_latency = elapsed / repeats
-    throughput = (batch_size * repeats) / elapsed
+    batch_latency = elapsed / repeats # average time required to generate one batch in seconds
+    throughput = (batch_size * repeats) / elapsed # number of synthetic LOB windows generated/second
 
     return batch_latency, throughput
 
@@ -435,6 +460,7 @@ def main():
     print(f"Total parameters: {total:,}")
     print(f"Trainable parameters: {trainable:,}")
 
+    # Count parameters used specifically during synthetic data generation
     if model_type == "timegan":
         generation_params = sum(
             p.numel()
@@ -448,11 +474,7 @@ def main():
 
     print(f"Generation parameters: {generation_params:,}")
 
-    # Computational efficiency
-    total, trainable = count_parameters(model)
-    print(f"Total parameters: {total:,}")
-    print(f"Trainable parameters: {trainable:,}")
-
+    # Benchmark generation latency and throughout over different batch sizes
     for batch_size in [1, 64]:
         latency, throughput = benchmark_generation(
             model, model_type, device, batch_size=batch_size
