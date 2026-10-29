@@ -797,8 +797,63 @@ loss_min_gap = price_gap_penalty(x_fake, gap_mean, gap_scale)
  )
 ```
 
+### Evaluation
+
+| Metric                                | Real  | TimeVAE  | TimeGAN v1 | TimeGAN v2 | TimeGAN v2.1 | TimeGAN v3 | Stronger Model |
+|---------------------------------------|-------|----------|------------|------------|--------------|------------|----------------|
+| Locked/crossed book (spread < 1 tick) | 0%    | 0.01328% | 0.00078%   | 0%         | 0%           | 0.00547%   | v2 and v2.1    |
+| Invalid ask ladder (gap < 1 tick)     | 0%    | 37.90%   | 82.92%     | 85.39%     | 54.48%       | 26.91%     | v3             |
+| Invalid bid ladder (gap < 1 tick)     | 0%    | 35.95%   | 79.98%     | 85.22%     | 49.62%       | 32.35%     | v3             |
+| Negative volume                       | 0%    | 0.0523%  | 1.632%     | 0.359%     | 0.694%       | 1.638%     | TimeVAE        |
+| KL Divergence Spread                  | 0     | 0.4949   | 0.293      | 0.516      | 0.466        | 0.477      | v1             |
+| KL Divergence Mid-price Returns       | 0     | 0.7733   | 1.417      | 1.433      | 1.086        | 0.948      | TimeVAE        |
+| Ask VWAP mean                         | 13.16 | 15.70    | 16.17      | 16.20      | 18.32        | 17.29      | TimeVAE        |
+| Ask VWAP variance                     | 8.87  | 9.40     | 19.83      | 23.96      | 356.51       | 70.97      | TimeVAE        |
+| Bid VWAP mean                         | 13.00 | 15.84    | 16.59      | 16.31      | 17.51        | 16.90      | TimeVAE        |
+| Bid VWAP variance                     | 7.17  | 9.83     | 19.81      | 19.83      | 72.09        | 38.41      | TimeVAE        |
+| Excess Kurtosis                       | 57.69 | 2.0943   | 2.13       | 5.21       | 14.96        | 8.06       | v2.1           |
+| SSIM (model vs real)                  | 0.115 | 0.1104   | 0.0830     | 0.0829     | 0.0796       | 0.0854     | None           |
+
+By introducing the upper threshold penalty term, our goal was to lower the ask and bid VWAP 
+variance values. Ask VWAP variance decreased from 356.51 to 70.97 and bid VWAP variance 
+decreased from 72.09 to 38.41, both significant improvements from v2.1. However, these values 
+are still too high compared to the real data's VWAP offset distribution, and the baseline model 
+still does the best at reproducing VWAP variances. 
+
+We can also check how the new penalty affected the price gap distribution.
+
+| Percentile | Real | TimeGAN v1 | TimeGAN v2.1 | TimeGAN v3 |
+|------------|------|------------|--------------|------------|
+| 50th       | 1.00 | 1.52       | 1.40         | 1.30       |
+| 90th       | 3.00 | 3.02       | 2.52         | 2.09       |
+| 95th       | 3.00 | 3.92       | 3.54         | 5.13       |
+| 99th       | 6.00 | 7.37       | 10.62        | 15.32      |
+| 99.9th     | 9.00 | 16.93      | 60.56        | 24.04      |
+
+There is no longer the massive outlier of the 60.56 tick price gap as now almost all price gaps 
+are under 24 ticks. The distribution is still much more extreme than the real data's and TimeGAN 
+v1 still models it the best.
+
+Interestingly, TimeGAN v3 saw invalid ladder violations drop even further. 
+Ask ladder violations dropped from 54.48% to 26.91% and bid ladder violations dropped from 49.
+62% to 32.35%. These are the best results of this metric in any model so far including the 
+baseline TimeVAE.
+Most other metrics stayed relatively similar to v2.1 except kurtosis which dropped to 8.06, 
+a slight step back in results.
+
+![TimeGANv3 Autocorrelation](ac_gan3.png)
+
+Figure 12: TimeGAN v1 vs v2 vs v2.1 vs v3 vs Real Autocorrelation
+
+Autocorrelation also got a lot worse as TimeGAN v3 started more positively related than the real 
+data in the lower lags but became negatively related in the higher lags. This is the weakest 
+autocorrelation result of the TimeGAN models so far. 
 
 ## Final Resource Profile
+| Metric | TimeVAE | TimeGAN v1 |
+|--------|---------|------------|
+|        |         |            |
+|        |         |            |
 
 ## Actionable Engineering Recommendation
 
