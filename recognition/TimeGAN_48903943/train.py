@@ -11,7 +11,6 @@ from modules import TimeVAE, vae_loss, TimeGAN
 
 # a single epoch for TimeVAE
 def run_epoch(model, loader, device, beta, optimizer=None):
-    """One pass over loader; returns per-window mean [total, recon, kl]."""
     training = optimizer is not None
     model.train(training)                 # BatchNorm: batch stats vs running stats
     sums, n = torch.zeros(3), 0
@@ -51,7 +50,7 @@ def vae():
     checkpoint_dir = os.path.expanduser("~/baselineOutputs")
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    # fitted on train only; predict.py reloads it
+    # fitted on train only, predict.py reloads it
     norm.save(os.path.join(checkpoint_dir, "normaliser.joblib"))
 
     history = {"train": [], "val": []}
