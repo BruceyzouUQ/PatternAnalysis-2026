@@ -693,6 +693,112 @@ Figure 11 shows an even sharper decrease in relatedness as lag increases and an 
 autocorrelation near smaller lags. TimeGAN v1 still remains the best model for reproducing 
 temporal dynamics.
 
+## Evaluating TimeGAN ver. 3
+
+## Version 2.1 Failure Cases
+The main concern from TimeGAN v2.1 was its ask and bid VWAP variances being 40x and 10x larger 
+than the real data's variances respectively. These are major increases from v2 and the 
+hypothesised reason is that the penalty is only penalising price gaps < 1 and not preventing 
+the model from learning price gaps too large. To verify this, we can use diagnostic print 
+statements to view the price gap distributions (at specific percentiles) of v2.1, v1 and the real 
+data.
+```
+gaps = np.exp(
+     norm.p_scaler.inverse_transform(
+         gen_Z.reshape(-1, 40)[:, :18]
+     )
+ )
+
+ print("Generated gap percentiles:",
+       np.percentile(gaps, [50, 90, 95, 99, 99.9]))
+
+ real_gaps = np.exp(
+     norm.p_scaler.inverse_transform(real_Z[:, :18])
+ )
+
+ print("Real gap percentiles:",
+       np.percentile(real_gaps, [50, 90, 95, 99, 99.9]))
+```
+
+After running diagnostics, the results were:
+
+| Percentile | Real | TimeGAN v1 | TimeGAN v2.1 |
+|------------|------|------------|--------------|
+| 50th       | 1.00 | 1.52       | 1.40         |
+| 90th       | 3.00 | 3.02       | 2.52         |
+| 95th       | 3.00 | 3.92       | 3.54         |
+| 99th       | 6.00 | 7.37       | 10.62        |
+| 99.9th     | 9.00 | 16.93      | 60.56        |
+
+All values are in ticks and we interpret the table as: 95% of the price gaps in the real 
+data were 3 ticks or lower and 50% of price gaps in TimeGAN v2.1's generations were 1.40 ticks 
+or lower.
+
+This confirms the hypothesis as TimeGAN v2.1 is indeed producing very large outlier price gaps 
+which is driving VWAP variance up. For example, almost all (99.9%) price gaps in the real data 
+are 9 ticks or lower whereas it is 60.56 ticks in the generated data. These outlier price gaps 
+will influence VWAP even more as a single large price gap affects every other level that comes 
+after it in the event.
+
+To illustrate this, the example below shows a single 60 tick price gap driving up prices for the 
+remaining levels. When weighted by volume and then averaged in the VWAP formula, this event will 
+have a very extreme VWAP offset compared to a regular event and only because of one outlier 
+price gap.
+
+| Level                           | 1   | 2   | 3   | 4   | 5   | 6   | 7   |
+|---------------------------------|-----|-----|-----|-----|-----|-----|-----|
+| Price                           | 100 | 101 | 161 | 162 | 163 | 166 | 168 |
+| Price Gap (from previous level) | N/A | 1   | 60  | 1   | 1   | 3   | 2   |
+
+### Proposal for Improvement
+A solution for the above failure case, would be to introduce a second term to the price-gap 
+penalty that penalises extremely large values. This should discourage the model from 
+producing outlier values and hypothetically reign in VWAP variance.
+
+```
+# Penalise extremely large price gaps
+def extreme_gap_penalty(x_fake, gap_mean, gap_scale, upper_threshold):
+    # Convert standardised generated gaps back to log values
+    log_gaps = x_fake[:, :, :18] * gap_scale + gap_mean
+
+    # Upper threshold in log space
+    log_upper = torch.log(
+        torch.tensor(upper_threshold, device=x_fake.device, dtype=x_fake.dtype)
+    )
+
+    # Penalise gaps above the upper threshold
+    return torch.relu(log_gaps - log_upper).mean()
+```
+Here, subtracting the log upper threshold from the log price gap values and then passing it 
+through ReLu makes sure only price gaps exceeding the upper threshold get penalised as 
+log_gaps - log_upper will be positive.
+
+We choose the upper threshold as the 99.9th percentile price gap value from the training set:
+```
+train_gaps = np.exp(
+    norm.p_scaler.inverse_transform(train_set.Z.numpy()[:, :18])
+)
+
+upper_threshold = np.quantile(train_gaps, 0.999)
+```
+
+And the new generator loss function becomes:
+```
+loss_min_gap = price_gap_penalty(x_fake, gap_mean, gap_scale)
+ loss_extreme_gap = extreme_gap_penalty(x_fake, gap_mean, gap_scale, upper_threshold)
+
+ loss_g = (
+         loss_adv
+         + gamma * loss_adv_raw
+         + 100 * torch.sqrt(loss_s + 1e-8)
+         + 100 * loss_m
+         + 100 * loss_min_gap
+         + 100 * loss_extreme_gap
+ )
+```
+
+
+
 ## References
 Desai, Abhyuday, et al. TimeVAE: A Variational Auto-Encoder for Multivariate Time Series 
 Generation. 2111.08095v3, 15 Nov. 2021. arXiv, arxiv.org/abs/2111.08095v3. Accessed 29 Oct. 2026.

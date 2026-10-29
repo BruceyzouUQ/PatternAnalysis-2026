@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torch.optim import Adam
@@ -154,10 +155,24 @@ def price_gap_penalty(x_fake, gap_mean, gap_scale):
     # Penalise gaps below one tick (log-gap < 0)
     return torch.relu(-log_gaps).mean()
 
+# -------------------------------- TimeGAN ver 3 improvement --------------------------------------
+# Penalise extremely large price gaps
+def extreme_gap_penalty(x_fake, gap_mean, gap_scale, upper_threshold):
+    # Convert standardised generated gaps back to log values
+    log_gaps = x_fake[:, :, :18] * gap_scale + gap_mean
+
+    # Upper threshold in log space
+    log_upper = torch.log(
+        torch.tensor(upper_threshold, device=x_fake.device, dtype=x_fake.dtype)
+    )
+
+    # Penalise gaps above the upper threshold
+    return torch.relu(log_gaps - log_upper).mean()
+
 # -------------------------------------------------------------------------------------------------
 
 # Calculate Generator loss to encourage realistic synthetic LOB sequences
-def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
+def generator_loss(model, x, z, gap_mean, gap_scale, upper_threshold, gamma=1.0):
     # Encode real sequences without updating the Embedder
     with torch.no_grad():
         h = model.embedder(x)
@@ -196,17 +211,23 @@ def generator_loss(model, x, z, gap_mean, gap_scale, gamma=1.0):
     )
 
     # Combine adversarial, supervised, moment matching and price gap losses
+    loss_min_gap = price_gap_penalty(x_fake, gap_mean, gap_scale)
+    loss_extreme_gap = extreme_gap_penalty(x_fake, gap_mean, gap_scale, upper_threshold)
+
     loss_g = (
             loss_adv
             + gamma * loss_adv_raw
             + 100 * torch.sqrt(loss_s + 1e-8)
             + 100 * loss_m
-            + 100 * price_gap_penalty(x_fake, gap_mean, gap_scale)
+            + 100 * loss_min_gap
+            + 100 * loss_extreme_gap
     )
 
     if torch.rand(()) < 0.001:
-        print(f"Weighted gap penalty: "
-              f"{(100 * price_gap_penalty(x_fake, gap_mean, gap_scale)).item():.6f}")
+        print(f"Weighted lower gap penalty: "
+              f"{(100 * loss_min_gap).item():.6f}")
+        print(f"Weighted upper gap penalty: "
+              f"{(100 * loss_extreme_gap).item():.6f}")
         print(f"Moment contribution: {(100 * loss_m).item():.6f}")
 
     return loss_g
@@ -242,7 +263,8 @@ def joint_train_epoch(model, loader, device,
                       generator_optimizer,
                       embedder_optimizer,
                       discriminator_optimizer,
-                      gap_mean, gap_scale):
+                      gap_mean, gap_scale,
+                      upper_threshold):
     model.train()
 
     total_g_loss = 0
@@ -263,7 +285,7 @@ def joint_train_epoch(model, loader, device,
             model.supervisor.requires_grad_(True)
 
             generator_optimizer.zero_grad()
-            loss_g = generator_loss(model, x, z, gap_mean, gap_scale)
+            loss_g = generator_loss(model, x, z, gap_mean, gap_scale, upper_threshold)
             loss_g.backward()
             generator_optimizer.step()
 
@@ -417,6 +439,12 @@ def timegan():
         device=device
     )
 
+    train_gaps = np.exp(
+        norm.p_scaler.inverse_transform(train_set.Z.numpy()[:, :18])
+    )
+
+    upper_threshold = np.quantile(train_gaps, 0.999)
+
     best_val_loss = float("inf")
 
     # joint adversarial training
@@ -428,7 +456,8 @@ def timegan():
             generator_optimizer,
             embedder_optimizer,
             discriminator_optimizer,
-            gap_mean, gap_scale
+            gap_mean, gap_scale,
+            upper_threshold
         )
 
         val_loss = validate_timegan(model, val_loader, device)
