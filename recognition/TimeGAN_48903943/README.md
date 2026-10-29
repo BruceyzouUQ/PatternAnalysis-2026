@@ -849,13 +849,24 @@ Autocorrelation also got a lot worse as TimeGAN v3 started more positively relat
 data in the lower lags but became negatively related in the higher lags. This is the weakest 
 autocorrelation result of the TimeGAN models so far. 
 
-## Final Resource Profile
-| Metric | TimeVAE | TimeGAN v1 |
-|--------|---------|------------|
-|        |         |            |
-|        |         |            |
+## Final Verdict and Actionable Engineering Recommendation
 
-## Actionable Engineering Recommendation
+
+## Final Resource Profile
+| Metric                     | TimeVAE              | TimeGAN v1           |
+|----------------------------|----------------------|----------------------|
+| Training Time              | 5 min 7 sec          | 20 min 20 sec        |
+| Peak GPU VRAM              | 618 MB               | 830 MB               |
+| Total Parameters           | 3,022,248            | 977,961              |
+| Batch-1 Inference Latency  | 0.741 ms             | 1.203 ms             |
+| Batch-1 Throughput         | 1349.91 sequences/s  | 831.54 sequences/s   |
+| Batch-64 Inference Latency | 0.759 ms             | 0.838 ms             |
+| Batch-64 Throughput        | 84283.37 sequences/s | 76333.11 sequences/s |
+
+Inference in the case of a generative model is when the trained model is used to generate 
+synthetic sequences. Inference was evaluated using batch sizes of 1 and 64. Inference latency is 
+the average time it takes to generate either 1 sequence for batch-1 or 64 sequences for 
+batch-64. Throughput is the inference latency converted into a sequences per second value. 
 
 ## References
 Desai, Abhyuday, et al. TimeVAE: A Variational Auto-Encoder for Multivariate Time Series 
