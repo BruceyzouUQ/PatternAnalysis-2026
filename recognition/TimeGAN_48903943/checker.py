@@ -308,6 +308,23 @@ def main():
     gen_Z = generate_samples(model, model_type, 2000, device)
     real_Z = test_set.Z.numpy()
 
+    # Diagnostic: Generated price-gap distribution
+    gaps = np.exp(
+        norm.p_scaler.inverse_transform(
+            gen_Z.reshape(-1, 40)[:, :18]
+        )
+    )
+
+    print("Generated gap percentiles:",
+          np.percentile(gaps, [50, 90, 95, 99, 99.9]))
+
+    real_gaps = np.exp(
+        norm.p_scaler.inverse_transform(real_Z[:, :18])
+    )
+
+    print("Real gap percentiles:",
+          np.percentile(real_gaps, [50, 90, 95, 99, 99.9]))
+
     # Financial validity
     print("Real violations:", rule_violations(real_Z, norm))
     print("Generated violations:", rule_violations(gen_Z, norm))
