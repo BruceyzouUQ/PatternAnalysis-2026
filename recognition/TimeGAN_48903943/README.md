@@ -798,6 +798,9 @@ loss_min_gap = price_gap_penalty(x_fake, gap_mean, gap_scale)
 ```
 
 
+## Final Resource Profile
+
+## Actionable Engineering Recommendation
 
 ## References
 Desai, Abhyuday, et al. TimeVAE: A Variational Auto-Encoder for Multivariate Time Series 
@@ -806,6 +809,40 @@ Generation. 2111.08095v3, 15 Nov. 2021. arXiv, arxiv.org/abs/2111.08095v3. Acces
 GeeksforGeeks. “Gated Recurrent Unit Networks.” GeeksforGeeks, 9 July 2019, www.geeksforgeeks.
 org/machine-learning/gated-recurrent-unit-networks/. Accessed 29 Oct. 2026.
 
+jsyoon0823. “GitHub - Jsyoon0823/TimeGAN: Codebase for Time-Series Generative Adversarial 
+Networks (TimeGAN) - NeurIPS 2019.” GitHub, 2019, github.com/jsyoon0823/TimeGAN. Accessed 29 Oct.
+2026.
+
 Yoon, Jinsung, et al. Time-Series Generative Adversarial Networks. Dec. 2019.
 
 ## Artificial Intelligence Usage Disclosure
+
+### AI Tools Used
+Claude Sonnet 5.5:
+1. Project scope and requirements breakdown
+2. Understanding limit order books
+3. Normalising LOB data using StandardScaler and log transforms (data preprocessing steps)
+4. Debugging baseline model encoder and decoder layers (getting in/out channels correct)
+5. Help with heatmap and reconstruction visualisation
+6. Help with adapting my original OASIS VAE implementation into a time series VAE for LOBs
+
+ChatGPT-5
+1. Assist with implementing TimeGAN's embedder, recovery and supervisor components (help with 
+   GRU networks and how each of the five components works together)
+2. Plot and graphic generation (matplotlib code)
+3. Help with writing debug print statements for training
+4. Debug and implementation help for evaluation metrics (Autocorrelation, kurtosis, VWAP, KL, SSIM)
+5. Help with understanding Yoon's original 2019 TimeGAN implementation and code from 
+   https://github.com/jsyoon0823/timegan
+
+### How AI Outputs Were Audited, Verified and Tested
+1. Outputs that created, transformed or edited NumPy arrays or PyTorch tensors were verified by 
+   printing out their shapes/dimensions at every step.
+2. Short CPU training runs were completed for both the baseline model and TimeGAN over a small 
+   number of epochs to ensure losses were decreasing before they were run on Rangpur.
+3. AI prompts were kept at a minimal length and strictly focused on one 
+   function/component/feature at a time. It is safer to understand and verify isolated outputs 
+   rather than trust an AI to output entire scripts.
+4. If AI outputs were difficult to understand, I asked for additional clarification or if it was 
+   possible to write it in another way. I made sure to understand every line of code I was 
+   committing in my codebase, and I wrote comments to accompany potentially hard to understand code.

@@ -72,6 +72,7 @@ class LOBNormaliser:
         ], axis=1).astype(np.float32)
         return Z, mid     # mid is needed for the inverse
 
+    # reverse the transformations done above
     def inverse(self, Z, mid):
         Z = np.asarray(Z, dtype=np.float64)
 
@@ -102,13 +103,20 @@ class LOBNormaliser:
 
         return X # back to LOB form
 
+    # Reconstruct midprice path given midprice returns
     def mid_path(self, Z, mid0):
-        """Rebuild midpoint paths from generated returns.
-        Z: (n, 64, 40) normalised windows, mid0: (n,) starting midpoint per window.
-        Returns (n, 64) midpoints whose first event equals mid0."""
         Z = np.asarray(Z, dtype=np.float64)
+
+        # midprice returns are from column 39 and reverse standardisation
         r = self.r_scaler.inverse_transform(Z[:, :, 39].reshape(-1, 1)).reshape(Z.shape[0], -1)
-        cum = np.cumsum(r, axis=1) - r[:, :1]  # first event -> 0
+
+        # discard the first return value because we are given the midprice to start (mid0) and we
+        # use every subsequent return value to calculate subsequent midprices
+        # E.g. Event 1 uses mid0, event 2 uses mid0 + r[1], event 3 uses event 2's midprice + r[2],
+        # etc.
+        cum = np.cumsum(r, axis=1) - r[:, :1]
+
+        # convert cumulative log returns abck into absolute midprice values
         return np.asarray(mid0)[:, None] * np.exp(cum)
 
     def save(self, path):
