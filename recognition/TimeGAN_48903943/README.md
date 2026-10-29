@@ -849,9 +849,6 @@ Autocorrelation also got a lot worse as TimeGAN v3 started more positively relat
 data in the lower lags but became negatively related in the higher lags. This is the weakest 
 autocorrelation result of the TimeGAN models so far. 
 
-## Final Verdict and Actionable Engineering Recommendation
-
-
 ## Final Resource Profile
 | Metric                     | TimeVAE              | TimeGAN v1           |
 |----------------------------|----------------------|----------------------|
@@ -866,7 +863,35 @@ autocorrelation result of the TimeGAN models so far.
 Inference in the case of a generative model is when the trained model is used to generate 
 synthetic sequences. Inference was evaluated using batch sizes of 1 and 64. Inference latency is 
 the average time it takes to generate either 1 sequence for batch-1 or 64 sequences for 
-batch-64. Throughput is the inference latency converted into a sequences per second value. 
+batch-64. Throughput is the inference latency converted into a sequences per second value.
+
+## Final Verdict and Actionable Engineering Recommendation
+Despite iterating on the TimeGAN multiple times, it is still unfeasible to claim that any 
+version of the TimeGAN completely outperformed the baseline model using the current evaluation 
+metrics. Every version and model had their own strengths and weaknesses which reveals the 
+tradeoffs that occur in machine learning. As the model begins to excel in one evaluation metric, 
+it may perform worse in another one. For example, the baseline model performed best in the VWAP 
+metrics, KL on mid-price returns and negative volume, but was not able to capture the real 
+data's heavy-tailed distribution (excess kurtosis) and temporal dynamics (autocorrelation). Then,
+for TimeGAN, v1 did the best in KL on spread and modelling autocorrelation, but fell short when 
+reproducing consistent valid ask/bid ladders and a realistic excess kurtosis. After introducing 
+new loss function terms, v2.1 produced the best heavy-tailed distribution result and v3 got the 
+lowest violation percentage for invalid ask/bid ladders.
+
+With no definitive 'best' model, I would recommend the baseline model (TimeVAE) as the preferred 
+model for further development. It performed decently well across all metrics and even the 
+best in some with its two major weaknesses being excess kurtosis and autocorrelation. 
+In this project, I did not have the opportunity to figure out the strange result of the 
+TimeVAE's autocorrelation values*, however, this would be the first aspect that requires 
+further investigation before the model is fully ready to deploy.
+
+In its current state, I would not deem it ready for use by quantitative stock 
+traders for real market simulations. The model's inability to reproduce the real data's 
+heavy-tailed return distribution would need to be addressed alongside the aforementioned 
+autocorrelation results. However, the model genuinely has potential and future iterations may 
+result in a realistic limit order book generator.
+
+*Refer back to [Temporal Dynamics - Autocorrelation](#temporal-dynamics---autocorrelation)
 
 ## References
 Desai, Abhyuday, et al. TimeVAE: A Variational Auto-Encoder for Multivariate Time Series 
