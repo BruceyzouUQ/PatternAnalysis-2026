@@ -284,7 +284,8 @@ def main():
         checkpoint = "timevae_best.pt"
 
     elif model_type == "timegan":
-        output_dir = os.path.expanduser("~/TimeGAN_gap_penalty")
+        # use ~/TimeGANoutputs for v1, ~/TimeGAN_gap_penalty for v2
+        output_dir = os.path.expanduser("~/TimeGANoutputs")
         model = TimeGAN().to(device)
         checkpoint = "timegan_best.pt"
 
