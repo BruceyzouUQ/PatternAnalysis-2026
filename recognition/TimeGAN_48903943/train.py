@@ -21,8 +21,8 @@ def run_epoch(model, loader, device, beta, optimizer=None):
             loss, recon, kl = vae_loss(x_hat, x, mu, logvar, beta) # loss function
             if training:
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                loss.backward()     # backprop
+                optimizer.step()    # update weights
             b = x.size(0)
             sums += torch.tensor([loss.item(), recon.item(), kl.item()]) * b
             n += b
@@ -76,7 +76,7 @@ def vae():
     te = run_epoch(model, test_loader, device, beta)
     print(f"Test (best-val checkpoint): total {te[0]:.1f}, recon {te[1]:.1f}, kl {te[2]:.1f}")
 
-    # Loss curves
+    # plot loss curves
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, k, name in zip(axes, (1, 2), ("Reconstruction", "KL")):
         ax.plot([h[k] for h in history["train"]], label="train")
@@ -108,8 +108,8 @@ def pretrain_embedder(model, loader, device, optimizer=None):
 
             if training:
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                loss.backward()     # backprop
+                optimizer.step()    # update weights
 
         total_loss += loss.item()
 
@@ -138,8 +138,8 @@ def pretrain_supervisor(model, loader, device, optimizer=None):
 
             if training:
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                loss.backward()     # backprop
+                optimizer.step()    # update weights
 
         total_loss += loss.item()
 
@@ -213,6 +213,7 @@ def generator_loss(model, x, z, gap_mean, gap_scale, upper_threshold, gamma=1.0)
     loss_min_gap = price_gap_penalty(x_fake, gap_mean, gap_scale)
     loss_extreme_gap = extreme_gap_penalty(x_fake, gap_mean, gap_scale, upper_threshold)
 
+    # calculate total generator loss
     loss_g = (
             loss_adv
             + gamma * loss_adv_raw
@@ -222,6 +223,7 @@ def generator_loss(model, x, z, gap_mean, gap_scale, upper_threshold, gamma=1.0)
             + 100 * loss_extreme_gap
     )
 
+    # diagnostic print statements for loss contributions
     if torch.rand(()) < 0.001:
         print(f"Weighted lower gap penalty: "
               f"{(100 * loss_min_gap).item():.6f}")
@@ -237,7 +239,11 @@ def discriminator_loss(model, x, z, gamma=1.0):
     # Prepare real and generated latent sequences without updating their networks
     with torch.no_grad():
         h = model.embedder(x)
+
+        # raw genertor outputs
         h_fake_raw = model.generator(z)
+
+        # pass them through supervisor to learn temporal relationships
         h_fake = model.supervisor(h_fake_raw)
 
     # Classify real latent sequences and both types of generated sequences
@@ -284,9 +290,11 @@ def joint_train_epoch(model, loader, device,
             model.supervisor.requires_grad_(True)
 
             generator_optimizer.zero_grad()
+
+            # generator loss
             loss_g = generator_loss(model, x, z, gap_mean, gap_scale, upper_threshold)
-            loss_g.backward()
-            generator_optimizer.step()
+            loss_g.backward()           # backprop
+            generator_optimizer.step()  # update generator and supervisor weights
 
             total_g_loss += loss_g.item()
 
@@ -298,14 +306,18 @@ def joint_train_epoch(model, loader, device,
             h = model.embedder(x)
             x_hat = model.recovery(h)
 
+            # reconstruction loss
             loss_r = torch.nn.functional.mse_loss(x_hat, x)
+
+            # supervisor loss
             loss_s = torch.nn.functional.mse_loss(
                 model.supervisor(h)[:, :-1, :], h[:, 1:, :])
 
+            # combined loss
             loss_e = 10 * torch.sqrt(loss_r + 1e-8) + 0.1 * loss_s
 
-            loss_e.backward()
-            embedder_optimizer.step()
+            loss_e.backward()           # backprop
+            embedder_optimizer.step()   # update embedder and recovery network weights
 
             total_e_loss += loss_e.item()
 
@@ -316,9 +328,9 @@ def joint_train_epoch(model, loader, device,
         discriminator_optimizer.zero_grad()
 
         # Train Discriminator to distinguish real and synthetic latent sequences
-        loss_d = discriminator_loss(model, x, z)
-        loss_d.backward()
-        discriminator_optimizer.step()
+        loss_d = discriminator_loss(model, x, z)    # discriminator loss
+        loss_d.backward()               # backprop
+        discriminator_optimizer.step()  # update discriminator weights
 
         total_d_loss += loss_d.item()
 
@@ -347,6 +359,7 @@ def validate_timegan(model, loader, device):
             # Generate synthetic LOB sequences
             x_fake = model.generate(z)
 
+            # compare real vs fake distributions of each feature (of 40)
             real_mean = x.mean(dim=(0, 1))
             fake_mean = x_fake.mean(dim=(0, 1))
 
@@ -442,6 +455,7 @@ def timegan():
         norm.p_scaler.inverse_transform(train_set.Z.numpy()[:, :18])
     )
 
+    # get upper price gap threshold for TimeGAN v3 penalty
     upper_threshold = np.quantile(train_gaps, 0.999)
 
     best_val_loss = float("inf")

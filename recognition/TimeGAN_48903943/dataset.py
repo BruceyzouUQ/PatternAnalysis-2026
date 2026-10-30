@@ -72,7 +72,7 @@ class LOBNormaliser:
         ], axis=1).astype(np.float32)
         return Z, mid     # mid is needed for the inverse
 
-    # reverse the transformations done above
+    # reverse the normalisation transformations done above
     def inverse(self, Z, mid):
         Z = np.asarray(Z, dtype=np.float64)
 
@@ -97,7 +97,10 @@ class LOBNormaliser:
             bid_best[:, None] - np.cumsum(P[:, 9:], axis=1)
         ])
 
+        # create empty feature matrix (len(Z) rows, 40 columns)
         X = np.empty((len(Z), 40), dtype=np.float64)
+
+        # put prices and volumes in
         X[:, 0::4], X[:, 1::4] = ask_prices, V[:, :10]
         X[:, 2::4], X[:, 3::4] = bid_prices, V[:, 10:]
 

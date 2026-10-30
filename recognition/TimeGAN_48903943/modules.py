@@ -32,11 +32,11 @@ class Encoder(nn.Module):
         self.fc_logvar = nn.Linear(flattened_dim, latent_dim)
 
     def forward(self, x):
-        x = self.conv_layers(x)
-        x = x.flatten(start_dim=1) # (B, 1024)
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        return mu, logvar
+        x = self.conv_layers(x)     # (B, 512, 2)
+        x = x.flatten(start_dim=1)  # flatten to (B, 1024)
+        mu = self.fc_mu(x)          # transform 1024 features into 128 means
+        logvar = self.fc_logvar(x)  # transform 1024 features into 128 log-variances
+        return mu, logvar           # return 128 mean-logvar pairs to sample from
 
 class Decoder(nn.Module):
     def __init__(self, latent_dim=128):
@@ -69,8 +69,8 @@ class Decoder(nn.Module):
 
     def forward(self, z):
         x = self.fc(z)
-        x = x.view(-1, 512, 2)  # unflatten
-        x = self.deconv_layers(x)
+        x = x.view(-1, 512, 2)      # unflatten
+        x = self.deconv_layers(x)   # pass through decoder layers
         return x
 
 
@@ -81,14 +81,14 @@ class TimeVAE(nn.Module):
         self.decoder = Decoder(latent_dim)
         self.latent_dim = latent_dim
 
+    # reparamaterisation allows us to sample from a distribution while maintaining differentiability
     def reparameterize(self, mu, logvar):
-        # reparamaterisation allows us to sample from a distribution while maintaining
-        # differentiability
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
+        # sample once from each of the 128 distributions learned by the encoder
+        std = torch.exp(0.5 * logvar) # undo log-var to get standard deviation
+        eps = torch.randn_like(std)   # introduce some noise for randomness
         return mu + std * eps
 
-    def forward(self, x):                      # x: (B, 64, 40)
+    def forward(self, x):                          # x: (B, 64, 40)
         mu, logvar = self.encoder(x.permute(0, 2, 1))
         z = self.reparameterize(mu, logvar)
         x_hat = self.decoder(z).permute(0, 2, 1)   # back to (B, 64, 40)
@@ -102,7 +102,11 @@ class TimeVAE(nn.Module):
 # Loss function combines reconstruction loss and KL loss
 def vae_loss(x_hat, x, mu, logvar, beta=1.0):
     b = x.size(0)
+
+    # calculate reconstruction loss using mean squared error
     recon_loss = F.mse_loss(x_hat, x, reduction='sum') / b
+
+    # KL loss using discrete KL loss formula
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / b
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
 

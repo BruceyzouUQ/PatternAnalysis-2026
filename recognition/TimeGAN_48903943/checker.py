@@ -39,13 +39,12 @@ def rule_violations(Z, norm, eps=1e-6):
     spr = np.exp(norm.s_scaler.inverse_transform(Z[:, 38:39]).ravel())
 
     # print violation percentages
+    # we introduce tiny epsilon leniency since inverse_transform might cause small floating point
+    # error
     return {
         "spread_below_one_tick":    np.mean(spr < 1.0 - eps),
-        "locked_or_crossed":        np.mean(spr <= 0),
         "ask_gap_below_one_tick":   np.mean((gap[:, :9] < 1.0 - eps).any(axis=1)),
         "bid_gap_below_one_tick":   np.mean((gap[:, 9:] < 1.0 - eps).any(axis=1)),
-        "ask_ladder":               np.mean((gap[:, :9] <= 0).any(axis=1)),
-        "bid_ladder":               np.mean((gap[:, 9:] <= 0).any(axis=1)),
         "neg_volume":               np.mean((vol < -eps).any(axis=1)),
     }
 
